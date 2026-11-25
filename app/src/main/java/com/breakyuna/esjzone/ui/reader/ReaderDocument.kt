@@ -9,6 +9,7 @@ import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle as ComposeTextStyle
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
@@ -57,6 +59,43 @@ internal fun ReaderBlock.renderedReaderText(textTransform: (String) -> String): 
     is ReaderBlock.Paragraph -> parts.joinToString("") { it.renderedReaderText(textTransform) }
     is ReaderBlock.Text -> textTransform(value)
     else -> ""
+}
+
+internal fun ReaderBlock.Paragraph.toAnnotatedReaderParagraph(
+    style: ComposeTextStyle,
+    textMeasurer: TextMeasurer,
+    density: Density,
+    textTransform: (String) -> String,
+    disclosureTitleParts: Int?,
+    checkCancelled: () -> Unit = {}
+): Pair<AnnotatedString, Map<String, InlineTextContent>> {
+    val inline = linkedMapOf<String, InlineTextContent>()
+    val text = buildAnnotatedString {
+        var titleEnd = 0
+        parts.forEachIndexed { index, part ->
+            checkCancelled()
+            val (value, content) = part.toAnnotatedReaderText(
+                style, textMeasurer, density, textTransform, inlineKey = "reader-ruby-$index"
+            )
+            append(value)
+            inline.putAll(content)
+            if (index + 1 == disclosureTitleParts) titleEnd = length
+        }
+        if (titleEnd > 0) {
+            // Paragraph styles create a line boundary without inserting a character
+            // that would change text offsets for links, bookmarks or underlines.
+            val titleHeight = if (inline.isEmpty() && style.lineHeight.isSp) {
+                (style.lineHeight.value * 1.18f).sp
+            } else TextUnit.Unspecified
+            addStyle(ParagraphStyle(textAlign = TextAlign.Start, textIndent = TextIndent.None,
+                lineHeight = titleHeight), 0, titleEnd)
+            addStyle(SpanStyle(fontWeight = FontWeight.SemiBold), 0, titleEnd)
+            if (titleEnd < length) {
+                addStyle(ParagraphStyle(textIndent = TextIndent.None), titleEnd, length)
+            }
+        }
+    }
+    return text to inline
 }
 
 /** Converts one domain text block to an annotated string while preserving inline ruby. */

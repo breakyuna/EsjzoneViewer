@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
+import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
 import com.breakyuna.esjzone.ui.reader.ReaderPageContent
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
@@ -107,6 +108,31 @@ class ReaderPaginationInstrumentedTest {
         val hit = com.breakyuna.esjzone.domain.reader.searchReaderDocument(document, "/forum/1/1.html", "后文") { offsets }.single()
         assertEquals(1, hit.anchor.offset)
         assertEquals(3, hit.highlights.single().end)
+    }
+
+    @Test
+    fun paginationKeepsDisclosureTitleOnItsOwnLineWithoutEditingText() {
+        val title = "作者的话"
+        val note = "附言正文"
+        val block = ReaderBlock.Paragraph(listOf(ReaderBlock.Text(title), ReaderBlock.Text(note)))
+        val density = Density(1f)
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
+            density, LayoutDirection.Ltr
+        )
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp)
+        val pages = paginateReaderChapter("章节", listOf(block), ReaderSettings(), style, style,
+            measurer, density, 300, 500, { it },
+            ReaderChapterFormatting(dividersAt = listOf(1), disclosureTitleParts = mapOf(0 to 1)))
+        val segments = pages.single().segments
+        val paragraph = segments.filterIsInstance<ReaderPageSegment.TextLine>().single()
+        val layout = measurer.measure(paragraph.text, style = requireNotNull(paragraph.paragraphStyle),
+            constraints = Constraints(maxWidth = 300))
+
+        assertEquals(title + note, paragraph.text.text)
+        assertEquals(0, layout.getLineForOffset(title.lastIndex))
+        assertEquals(1, layout.getLineForOffset(title.length))
+        assertTrue(segments.last() is ReaderPageSegment.Divider)
     }
 
     @Test

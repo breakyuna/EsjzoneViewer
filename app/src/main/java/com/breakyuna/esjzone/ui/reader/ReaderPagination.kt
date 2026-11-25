@@ -195,16 +195,8 @@ internal fun paginateReaderChapter(
         val paragraphStyle = readerParagraphStyle(textStyle, alignment)
         when (block) {
             is ReaderBlock.Paragraph -> {
-                val inline = linkedMapOf<String, InlineTextContent>()
-                val text = androidx.compose.ui.text.buildAnnotatedString {
-                    block.parts.forEachIndexed { index, part ->
-                        checkCancelled()
-                        val (value, content) = part.toAnnotatedReaderText(paragraphStyle, textMeasurer, density,
-                            textTransform, inlineKey = "reader-ruby-$index")
-                        append(value)
-                        inline.putAll(content)
-                    }
-                }
+                val (text, inline) = block.toAnnotatedReaderParagraph(paragraphStyle, textMeasurer, density,
+                    textTransform, formatting.disclosureTitleParts[blockIndex], checkCancelled)
                 addText(text, inline, blockIndex, paragraphStyle, alignment)
             }
             is ReaderBlock.Text -> {

@@ -45,8 +45,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -126,6 +124,7 @@ fun ReaderBlocks(
                     is ReaderBlock.Paragraph -> ReaderParagraphBlock(
                         block = block,
                         textStyle = paragraphStyle,
+                        disclosureTitleParts = formatting.disclosureTitleParts[blockIndex],
                         fullWidth = alignment != null,
                         textMeasurer = textMeasurer,
                         density = density,
@@ -203,6 +202,7 @@ fun ReaderBlocks(
 private fun ReaderParagraphBlock(
     block: ReaderBlock.Paragraph,
     textStyle: TextStyle,
+    disclosureTitleParts: Int?,
     fullWidth: Boolean,
     textMeasurer: TextMeasurer,
     density: Density,
@@ -223,22 +223,8 @@ private fun ReaderParagraphBlock(
     onLinkClick: (String) -> Unit,
     textOffsets: ReaderTextOffsets
 ) {
-    val (paragraph, inlineContent) = remember(block, textStyle, textTransform, textMeasurer, density) {
-        val inlines = linkedMapOf<String, InlineTextContent>()
-        val annotated = buildAnnotatedString {
-            block.parts.forEachIndexed { index, part ->
-                val (text, partInlines) = part.toAnnotatedReaderText(
-                    baseStyle = textStyle,
-                    textMeasurer = textMeasurer,
-                    density = density,
-                    textTransform = textTransform,
-                    inlineKey = "reader-ruby-$index"
-                )
-                append(text)
-                inlines.putAll(partInlines)
-            }
-        }
-        annotated to inlines
+    val (paragraph, inlineContent) = remember(block, textStyle, textTransform, textMeasurer, density, disclosureTitleParts) {
+        block.toAnnotatedReaderParagraph(textStyle, textMeasurer, density, textTransform, disclosureTitleParts)
     }
     val layoutStyle = remember(block, textStyle, inlineContent, textMeasurer, density, textTransform) {
         readerRubyParagraphStyle(block, textStyle, inlineContent, textMeasurer, density, textTransform)

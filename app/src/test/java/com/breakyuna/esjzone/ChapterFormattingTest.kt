@@ -91,6 +91,31 @@ class ChapterFormattingTest {
         assertSame(old, old.withFormatting("<p>正文无格式</p>", null))
     }
 
+    @Test fun inlineAndManuallySpacedDisclosureBodiesShareTheSameLayout() {
+        for (note in listOf("附言一<br><br>附言二", "-<br><br>附言一<br><br>附言二")) {
+            val html = "<p>正文</p><details><summary><strong>作者</strong>的话</summary>$note</details><p>尾声</p>"
+            val parsed = analyseChapterContent(Jsoup.parseBodyFragment(html).body())
+
+            assertEquals(mapOf(1 to 2), parsed.formatting.disclosureTitleParts)
+            assertEquals(listOf(2), parsed.formatting.dividersAt)
+            assertEquals(body(html).fingerprint, ChapterBody.fromBlocks(parsed.blocks).fingerprint)
+        }
+    }
+
+    @Test fun oldDownloadsCanRecoverDisclosureLayoutWithoutMovingTextAnchors() {
+        val html = "<details><summary>作者的话</summary><p>第一段</p><p>第二段</p></details><p>尾声</p>"
+        val gson = Gson()
+        val encoded = gson.toJsonTree(body(html).copy(formatting = ReaderChapterFormatting(parserVersion = 1))).asJsonObject
+        encoded.getAsJsonObject("formatting").remove("disclosureTitleParts")
+        val old = gson.fromJson(encoded, ChapterBody::class.java).validate()
+        val layout = old.withFormatting(Jsoup.parseBodyFragment(html).body().html(), null)
+
+        assertEquals(mapOf(0 to 1), layout.formatting!!.disclosureTitleParts)
+        assertEquals(listOf(3), layout.formatting!!.dividersAt)
+        assertEquals(old.blocks, layout.blocks)
+        assertEquals(old.fingerprint, layout.fingerprint)
+    }
+
     @Test fun inheritedAlignmentAndRulesKeepTheirOriginalBlockPositions() {
         val html = "<hr><div style='text-align: right'><p>标题</p></div><hr><hr><p>正文</p><hr>"
         val result = body(html).withFormatting(html, null)

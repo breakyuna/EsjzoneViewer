@@ -39,10 +39,12 @@ data class ReaderChapterFormatting(
     /** A position is the number of body blocks preceding the horizontal rule. */
     val dividersAt: List<Int> = emptyList(),
     /** Missing fields in older snapshots retain 0; the parser stamps new formatting explicitly. */
-    val parserVersion: Int = 0
+    val parserVersion: Int = 0,
+    /** Number of source text parts belonging to the visible summary at the start of a block. */
+    val disclosureTitleParts: Map<Int, Int> = emptyMap()
 ) : Serializable {
     companion object {
-        const val CURRENT_PARSER_VERSION = 1
+        const val CURRENT_PARSER_VERSION = 2
     }
 }
 

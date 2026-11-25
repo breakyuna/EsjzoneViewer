@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.network
 
 import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.hasChapterFormattingMarkup
 import com.breakyuna.esjzone.data.reader.withFormatting
 import com.breakyuna.esjzone.data.reader.withStructuredBody
 import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
@@ -32,8 +33,7 @@ internal object StructuredChapterCache {
             val html = stored.html
             val checked = stored.body.validate().recoverLeadingBreakText(html, stored.sourceUrl)
             val needsFormattingRecovery = (checked.formatting?.parserVersion ?: 0) < ReaderChapterFormatting.CURRENT_PARSER_VERSION
-            val formatKey = if (needsFormattingRecovery && !html.isNullOrBlank() &&
-                (html.contains("text-align", ignoreCase = true) || html.contains("<hr", ignoreCase = true))) {
+            val formatKey = if (needsFormattingRecovery && !html.isNullOrBlank() && html.hasChapterFormattingMarkup()) {
                 val digest = MessageDigest.getInstance("SHA-256").digest(html.toByteArray(Charsets.UTF_8))
                     .joinToString("") { "%02x".format(it) }
                 FormattingKey(checked.fingerprint, stored.sourceUrl, digest)

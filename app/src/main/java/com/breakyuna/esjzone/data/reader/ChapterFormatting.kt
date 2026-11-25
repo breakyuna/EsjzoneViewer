@@ -13,6 +13,10 @@ import java.util.IdentityHashMap
 
 private val chapterAlignments = setOf("left", "center", "right", "start", "end", "justify")
 
+internal fun String.hasChapterFormattingMarkup(): Boolean =
+    contains("text-align", ignoreCase = true) || contains("<hr", ignoreCase = true) ||
+        contains("<details", ignoreCase = true)
+
 internal data class ParsedChapterContent(
     val components: List<Component>,
     val blocks: List<ReaderBlock>,
@@ -25,6 +29,8 @@ internal fun analyseChapterContent(element: Element): ParsedChapterContent {
     val blocks = mutableListOf<ReaderBlock>()
     val alignments = mutableMapOf<Int, String>()
     val dividers = mutableListOf<Int>()
+    val disclosureTitles = mutableMapOf<Int, Int>()
+    val disclosureEnds = IdentityHashMap<Element, Int>()
     val inherited = IdentityHashMap<Element, String?>()
     val sourceParents = IdentityHashMap<Element, Element>()
     fun alignmentFor(node: Element?): String? {
@@ -49,13 +55,44 @@ internal fun analyseChapterContent(element: Element): ParsedChapterContent {
         val alignment = alignmentFor(paragraph)
         val parsed = analyseParagraph(paragraph)
         val parsedBlocks = parsed.flatMap(Component::toReaderBlocks)
+        val source = sourceParents[paragraph] ?: paragraph
+        if (source.normalName() == "details") {
+            val summary = paragraph.children().firstOrNull { it.normalName() == "summary" }
+            val title = summary?.let { analyseParagraph(it).flatMap(Component::toReaderBlocks) }
+                ?.joinToString("") { it.sourceText() }
+            val titleParts = title?.let { parsedBlocks.firstOrNull()?.leadingTitleParts(it) }
+            if (titleParts != null) {
+                disclosureTitles[blocks.size] = titleParts
+                disclosureEnds[source] = blocks.size
+            }
+        }
         if (alignment != null) parsedBlocks.indices.forEach { offset -> alignments[blocks.size + offset] = alignment }
         blocks.addAll(parsedBlocks)
         components.addAll(parsed)
+        if (disclosureEnds.isNotEmpty()) {
+            for (ancestor in generateSequence(source) { it.parent() }) {
+                if (disclosureEnds.containsKey(ancestor)) disclosureEnds[ancestor] = blocks.size
+            }
+        }
     }
     return ParsedChapterContent(components, blocks, ReaderChapterFormatting(
-        alignments.toMap(), dividers.toList(), parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION
+        alignments = alignments.toMap(),
+        dividersAt = (dividers + disclosureEnds.values.toSet().filterNot(dividers::contains)).sorted(),
+        parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION,
+        disclosureTitleParts = disclosureTitles.toMap()
     ))
+}
+
+private fun ReaderBlock.leadingTitleParts(title: String): Int? {
+    if (this !is ReaderBlock.Paragraph) return null
+    val expected = title.filterNot(Char::isWhitespace)
+    if (expected.isEmpty()) return null
+    val prefix = StringBuilder()
+    for ((index, part) in parts.withIndex()) {
+        prefix.append(part.value.filterNot(Char::isWhitespace))
+        if (prefix.length >= expected.length) return (index + 1).takeIf { prefix.toString() == expected }
+    }
+    return null
 }
 
 /** Recover formatting only when the saved HTML describes the same body blocks. */
@@ -64,18 +101,22 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
     if (saved != null) {
         val valid = runCatching {
             saved.alignments.all { (index, alignment) -> index in blocks.indices && alignment in chapterAlignments } &&
-                saved.dividersAt.all { it in 0..blocks.size }
+                saved.dividersAt.all { it in 0..blocks.size } &&
+                saved.disclosureTitleParts.all { (index, count) ->
+                    val block = blocks.getOrNull(index)
+                    block?.type == "paragraph" && count in 1..block.parts.size
+                }
         }.getOrDefault(false)
         if (valid && (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION || html.isNullOrBlank())) {
             return this
         }
         if (!valid) return copy(formatting = null).withFormatting(html, baseUrl)
     }
-    if (html.isNullOrBlank()) return this
-    if (!html.contains("text-align", ignoreCase = true) && !html.contains("<hr", ignoreCase = true)) return this
+    if (html.isNullOrBlank() || !html.hasChapterFormattingMarkup()) return this
     val result = runCatching {
         val document = Jsoup.parseBodyFragment(html, baseUrl.orEmpty())
         val recovered = analyseChapterContent(document.body())
+        val layout = recovered.formatting
         val parsed = recovered.blocks
         val stored = readerBlocks()
         val matches = parsed.size == stored.size && parsed.indices.all { index ->
@@ -84,12 +125,19 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
             when (expected) {
                 is ReaderBlock.Paragraph, is ReaderBlock.Text ->
                     (actual is ReaderBlock.Paragraph || actual is ReaderBlock.Text) &&
-                        actual.sourceText() == expected.sourceText()
+                        (actual.sourceText() == expected.sourceText() || layout.disclosureTitleParts.isNotEmpty() &&
+                            actual.sourceText().filterNot(Char::isWhitespace) ==
+                            expected.sourceText().filterNot(Char::isWhitespace))
                 is ReaderBlock.Image -> actual is ReaderBlock.Image && actual.url == expected.url
                 ReaderBlock.LineBreak -> actual == ReaderBlock.LineBreak
             }
         }
-        recovered.formatting.takeIf { matches && (it.alignments.isNotEmpty() || it.dividersAt.isNotEmpty()) }
+        if (!matches || (layout.alignments.isEmpty() && layout.dividersAt.isEmpty())) return this
+        val titles = layout.disclosureTitleParts.mapNotNull { (index, count) ->
+            val title = (parsed[index] as ReaderBlock.Paragraph).parts.take(count).joinToString("") { it.value }
+            stored[index].leadingTitleParts(title)?.let { index to it }
+        }.toMap()
+        layout.copy(disclosureTitleParts = titles)
     }.getOrElse { return this }
     return if (result == null) this else copy(formatting = result)
 }
