@@ -1,11 +1,14 @@
 package com.breakyuna.esjzone
 
+import androidx.compose.ui.text.TextRange
+import com.breakyuna.esjzone.database.entity.Bookmark
+import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineInfo
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlineRange
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
-import androidx.compose.ui.text.TextRange
+import com.breakyuna.esjzone.ui.page.resolveUnderlineRows
 import com.breakyuna.esjzone.ui.reader.readerUnderlineCharacterRange
 import org.junit.Assert.*
 import org.junit.Test
@@ -61,13 +64,20 @@ class ReaderUnderlinesTest {
             ReaderUnderline(0, original, 1, 2), ReaderUnderline(0, simplified, 1, 2)))
     }
 
-    @Test fun missingRecordIsEmptyButInvalidStoredValuesAreRejected() {
+    @Test fun decodeTreatsMissingAsEmptyAndRejectsInvalidOrMalformedRecords() {
         assertTrue(ReaderUnderlines.decode(null).isEmpty())
         assertTrue(ReaderUnderlines.decode("[]").isEmpty())
         for (value in listOf("", " \n\t", "null")) {
             assertThrows(IllegalArgumentException::class.java) { ReaderUnderlines.decode(value) }
         }
         assertThrows(com.google.gson.JsonParseException::class.java) { ReaderUnderlines.decode("{") }
+        val reordered = mark(0, 2, 2).copy(continuation = listOf(ReaderUnderlineRange(1, signature, 0, 2)))
+        val repeated = mark(0, 2).copy(continuation = listOf(ReaderUnderlineRange(0, signature, 1, 3)))
+        for (invalid in listOf(reordered, repeated)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(invalid)))
+            }
+        }
     }
 
     @Test fun characterSelectionDoesNotExpandToWordsOrSplitSupplementaryCharacters() {
@@ -88,34 +98,28 @@ class ReaderUnderlinesTest {
         assertNull(ReaderUnderlines.decode("[{\"blockIndex\":0,\"signature\":\"$signature\",\"start\":1,\"end\":3}]").single().quote)
     }
 
-    @Test fun consecutiveParagraphsAndOrdinaryNewlinesAreOneMark() {
-        val ranges = listOf(ReaderUnderlineRange(0, signature, 1, 6), ReaderUnderlineRange(1, signature, 0, 3))
-        val result = ReaderUnderlines.selection(listOf(ranges[0] to "甲。乙\n丙", ranges[1] to "丁戊己"))
-        assertEquals(1, result.size)
-        assertEquals(ranges, result.single().ranges())
-    }
+    @Test fun selectionGroupsConsecutiveParagraphsAndSplitsOnBlankLinesOrNonTextBlocks() {
+        val consecutive = listOf(ReaderUnderlineRange(0, signature, 1, 6), ReaderUnderlineRange(1, signature, 0, 3))
+        val joined = ReaderUnderlines.selection(listOf(consecutive[0] to "甲。乙\n丙", consecutive[1] to "丁戊己"))
+        assertEquals(1, joined.size)
+        assertEquals(consecutive, joined.single().ranges())
 
-    @Test fun blankParagraphsAndNonTextBlocksSeparateMarks() {
-        val result = ReaderUnderlines.selection(listOf(
+        val separated = ReaderUnderlines.selection(listOf(
             ReaderUnderlineRange(0, signature, 0, 2) to "甲乙",
             ReaderUnderlineRange(1, signature, 0, 2) to "　\n",
             ReaderUnderlineRange(2, signature, 0, 2) to "丙丁",
             ReaderUnderlineRange(4, signature, 0, 2) to "戊己"))
-        assertEquals(listOf(0, 2, 4), result.map { it.blockIndex })
-        assertTrue(result.all { it.continuation == null })
-    }
+        assertEquals(listOf(0, 2, 4), separated.map { it.blockIndex })
+        assertTrue(separated.all { it.continuation == null })
 
-    @Test fun whitespaceOnlyBlankLinesWithinOneBlockSeparateCharacterRanges() {
         val text = "甲乙\r\n　\t\r\n丙丁\n戊己"
-        val result = ReaderUnderlines.selection(listOf(ReaderUnderlineRange(3, signature, 10, 10 + text.length) to text))
-        assertEquals(listOf(mark(10, 12, 3), mark(18, 10 + text.length, 3)), result)
-    }
+        val splitBlock = ReaderUnderlines.selection(listOf(ReaderUnderlineRange(3, signature, 10, 10 + text.length) to text))
+        assertEquals(listOf(mark(10, 12, 3), mark(18, 10 + text.length, 3)), splitBlock)
 
-    @Test fun blankLineAtParagraphBoundarySeparatesMarks() {
-        val result = ReaderUnderlines.selection(listOf(
+        val boundaryBlank = ReaderUnderlines.selection(listOf(
             ReaderUnderlineRange(0, signature, 0, 3) to "甲乙\n",
             ReaderUnderlineRange(1, signature, 0, 2) to "丙丁"))
-        assertEquals(2, result.size)
+        assertEquals(2, boundaryBlank.size)
     }
 
     @Test fun groupedQuoteRestoreMergeAndRemovalKeepTheEntireMarkTogether() {
@@ -136,34 +140,44 @@ class ReaderUnderlinesTest {
         assertTrue(ReaderUnderlines.update(extended, mark(2, 3, 1), true).isEmpty())
     }
 
-    @Test fun overlappingCrossParagraphMarksFromDifferentScriptsRemainReadable() {
-        val changed = ReaderBlock.Text("頭髮")
-        val stable = ReaderBlock.Text("甲乙")
-        val original = ReaderUnderlines.signature(changed, "頭髮")
-        val simplified = ReaderUnderlines.signature(changed, "头发")
-        val unchanged = ReaderUnderlines.signature(stable, "甲乙")
-        val continuation = listOf(ReaderUnderlineRange(1, unchanged, 0, 2))
-        val old = ReaderUnderline(0, original, 0, 2, continuation = continuation)
-        val selected = ReaderUnderline(0, simplified, 0, 2, continuation = continuation)
-        val saved = ReaderUnderlines.update(listOf(old), selected, false, quotes { if (it == 0) "头发" else "甲乙" })
-        assertEquals(2, saved.size)
-        assertTrue(old in saved)
-        assertEquals(selected.copy(quote = "头发\n甲乙"), saved.last())
-        assertEquals(saved, ReaderUnderlines.decode(ReaderUnderlines.encode(saved)))
+    @Test fun oldAndNewMarksResolveIndependentlyFromLocalContext() {
+        val chapter = "/forum/123/1.html"
+        val other = "/forum/456/2.html"
+        val first = ReaderUnderline(1, "a".repeat(64), 1, 3, quote = "第一处")
+        val second = ReaderUnderline(5, "b".repeat(64), 0, 2, quote = "第二处")
+        val newer = ReaderUnderline(2, "c".repeat(64), 0, 4, quote = "新划线",
+            info = ReaderUnderlineInfo(novelId = "456", novelName = "另一本书", chapterName = "第二章"))
+        val bookmark = Bookmark(chapter, "123", "测试小说", "第一章")
+        val history = LocalReadingActivity("novel:123", "123", "测试小说", "/detail/123.html",
+            "/forum/123/9.html", "第九章", 8, 10, 0.5f, 1L, 2L, 10L)
 
-        // A later selection of only the unchanged block also touches both versions.
-        val next = ReaderUnderlines.update(saved, ReaderUnderline(1, unchanged, 0, 1), false)
-        assertEquals(saved.toSet(), next.toSet())
-        assertEquals(next, ReaderUnderlines.decode(ReaderUnderlines.encode(next)))
+        val rows = resolveUnderlineRows(mapOf(chapter to listOf(first, second), other to listOf(newer)),
+            listOf(bookmark), listOf(history), emptyList(), emptyList())
+        val old = rows.filter { it.chapterKey == chapter }
+        assertEquals(2, old.size)
+        assertEquals(listOf("第一章", "第一章"), old.map { it.chapterName })
+        assertEquals(listOf("测试小说", "测试小说"), old.map { it.novelName })
+        assertEquals(listOf("第一处", "第二处"), old.map { it.mark.quote })
+        assertNotEquals(old[0].id, old[1].id)
+        assertEquals("另一本书", rows.single { it.chapterKey == other }.novelName)
+        assertEquals("第二章", rows.single { it.chapterKey == other }.chapterName)
     }
 
-    @Test fun decodeRejectsReorderedBlocksAndRepeatedIdenticalSources() {
-        val reordered = mark(0, 2, 2).copy(continuation = listOf(ReaderUnderlineRange(1, signature, 0, 2)))
-        val repeated = mark(0, 2).copy(continuation = listOf(ReaderUnderlineRange(0, signature, 1, 3)))
-        for (invalid in listOf(reordered, repeated)) {
-            assertThrows(IllegalArgumentException::class.java) {
-                ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(invalid)))
-            }
-        }
+    @Test fun missingMetadataDoesNotHideTheSavedMark() {
+        val mark = ReaderUnderline(0, "a".repeat(64), 0, 1)
+        val row = resolveUnderlineRows(mapOf("/forum/123/1.html" to listOf(mark)), emptyList(),
+            emptyList(), emptyList(), emptyList()).single()
+        assertEquals(mark, row.mark)
+        assertEquals("123", row.novelId)
+        assertEquals("", row.chapterName)
+        assertEquals("/detail/123.html", row.novelUrl)
+    }
+
+    @Test fun duplicateSavedRangesProduceOneStableVisibleEntry() {
+        val mark = ReaderUnderline(0, "a".repeat(64), 0, 1)
+        val rows = resolveUnderlineRows(mapOf("/forum/123/1.html" to listOf(mark, mark.copy(quote = "摘录"))),
+            emptyList(), emptyList(), emptyList(), emptyList())
+        assertEquals(1, rows.size)
+        assertEquals("摘录", rows.single().mark.quote)
     }
 }

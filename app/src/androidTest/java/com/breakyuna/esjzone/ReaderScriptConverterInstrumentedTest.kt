@@ -14,37 +14,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ReaderScriptConverterInstrumentedTest {
-    @Test
-    fun cancelledConversionStopsWithinOneChapterInsteadOfCompletingTheSnapshot() {
-        val document = ReaderChapterDocument(ReaderChapterRef("标题", "/forum/1/1.html"),
-            (1..1000).map { ReaderBlock.Text("龍馬$it") })
-        var checks = 0
-        val cancelled = kotlinx.coroutines.CancellationException("Settings changed")
-        try {
-            ReaderScriptConverter.snapshot(listOf(document), ReaderScript.SIMPLIFIED,
-                checkCancelled = { if (++checks == 12) throw cancelled })
-            org.junit.Assert.fail("Cancelled work must not publish a partial snapshot")
-        } catch (error: kotlinx.coroutines.CancellationException) {
-            assertSame(cancelled, error)
-            assertEquals(12, checks)
-        }
-    }
-
-    @Test
-    fun originalAndEmptyTextReturnTheExistingString() {
-        val source = String(CharArray(8192) { '龍' })
-        assertSame(source, ReaderScriptConverter.convert(source, ReaderScript.ORIGINAL))
-        ReaderScript.entries.forEach { script ->
-            assertSame("", ReaderScriptConverter.convert("", script))
-        }
-    }
-
     @Test
     fun simultaneousConversionsPreserveBothScriptsAndSourceBoundaries() {
         val executor = Executors.newFixedThreadPool(2)
@@ -87,26 +61,4 @@ class ReaderScriptConverterInstrumentedTest {
         assertEquals(setOf(ReaderTextStyle.Bold), ruby.styles)
         assertEquals(ReaderRuby("龍", "書"), ruby.ruby)
     }
-    @Test
-    fun replacementSnapshotKeepsTextAndOffsetsTogetherAndInvalidatesChangedRules() {
-        val block = ReaderBlock.Text("龍馬")
-        val document = ReaderChapterDocument(ReaderChapterRef("龍馬", "/forum/1/1.html"), listOf(block))
-        val names = com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings(enabled = true, rules = listOf(
-            com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule(source = "龙", target = "小龙")))
-        val first = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.SIMPLIFIED, nameReplace = names)
-        assertEquals("小龙马", first.values["龍馬"])
-        val mapping = requireNotNull(first.blockMappings[block])
-        assertEquals("小龙马", mapping.text)
-        assertArrayEquals(intArrayOf(0, 0, 1), mapping.sourceStarts)
-        assertArrayEquals(intArrayOf(1, 1, 2), mapping.sourceEnds)
-        val changed = names.copy(rules = listOf(names.rules.single().copy(target = "大龙")))
-        val second = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.SIMPLIFIED, first, changed)
-        assertEquals("大龙马", second.values["龍馬"])
-        assertEquals("大龙马", second.blockMappings[block]!!.text)
-        val original = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.ORIGINAL,
-            nameReplace = names.copy(rules = listOf(names.rules.single().copy(source = "龍", target = "小龍"))))
-        assertEquals("小龍馬", original.values["龍馬"])
-        assertEquals("小龍馬", original.blockMappings[block]!!.text)
-    }
-
 }

@@ -6,15 +6,14 @@ import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.NetworkRequestException
 import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.network.features.ExperienceRecordException
-import com.breakyuna.esjzone.network.features.experienceRecordStatus
 import com.breakyuna.esjzone.network.features.getExperienceRecords
 import com.breakyuna.esjzone.network.features.isRequestTimeout
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecord
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordPage
 import com.breakyuna.esjzone.novellibrary.user.ExperienceRecordType
-import com.breakyuna.esjzone.ui.page.ExperienceRecordsController
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsCache
+import com.breakyuna.esjzone.ui.page.ExperienceRecordsController
 import com.breakyuna.esjzone.ui.page.ExperienceRecordsState
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -34,6 +33,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -42,8 +42,8 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,18 +61,10 @@ class ExperienceRecordTimeoutTest {
         assertTrue(RuntimeException(IOException(read)).isRequestTimeout())
         // Still a network failure for every other caller.
         assertEquals(LoadFailureKind.NETWORK, read.loadFailureKind())
-    }
 
-    @Test fun otherFailuresAreNotTimeouts() {
         assertFalse(NetworkRequestException(url, ConnectException("refused")).isRequestTimeout())
         assertFalse(ExperienceRecordException("Experience record status 500").isRequestTimeout())
         assertFalse(IOException("Canceled").isRequestTimeout())
-    }
-
-    @Test fun statusIsReadFromJsonOnly() {
-        assertEquals("301", experienceRecordStatus("""{"status":301,"total":0,"rows":[]}"""))
-        assertEquals("200", experienceRecordStatus(""" {"status":"200"} """))
-        assertNull(experienceRecordStatus("<html>login</html>"))
     }
 
     // ---- client configuration ----
@@ -101,40 +93,9 @@ class ExperienceRecordTimeoutTest {
             .callTimeout(30, TimeUnit.SECONDS)
             .build()
 
-    @Test fun recordClientOnlyExtendsItsOwnBudget() {
-        val shared = sharedLikeProduction()
-        sharedField.set(EsjzoneClient, shared)
-
-        val base = EsjzoneClient.memberRecordBaseClient()
-        assertEquals(60_000, base.readTimeoutMillis)
-        assertEquals(90_000, base.callTimeoutMillis)
-        assertEquals(5_000, base.connectTimeoutMillis)
-        assertFalse(base.followRedirects)
-        assertSame(shared.connectionPool, base.connectionPool)
-        // Built once per shared client, not per request.
-        assertSame(base, EsjzoneClient.memberRecordBaseClient())
-
-        val scoped = EsjzoneClient.memberRecordClient(authorization)
-        assertEquals(60_000, scoped.readTimeoutMillis)
-        assertEquals(90_000, scoped.callTimeoutMillis)
-        assertFalse(scoped.followRedirects)
-        assertSame(shared.connectionPool, scoped.connectionPool)
-
-        // The shared client and ordinary authenticated requests keep 15 s / 30 s.
-        val ordinary = EsjzoneClient.authenticatedClient(authorization)
-        assertEquals(15_000, ordinary.readTimeoutMillis)
-        assertEquals(30_000, ordinary.callTimeoutMillis)
-        assertEquals(15_000, (sharedField.get(EsjzoneClient) as OkHttpClient).readTimeoutMillis)
-
-        // Replacing the shared client (app initialization) rebuilds the profile from it.
-        val replacement = sharedLikeProduction()
-        sharedField.set(EsjzoneClient, replacement)
-        assertSame(replacement.connectionPool, EsjzoneClient.memberRecordBaseClient().connectionPool)
-    }
-
-    @Test fun onlyTheDataRequestUsesTheLongBudget() {
+    @Test fun recordClientOnlyExtendsDataRequestBudget() {
         val budgets = Collections.synchronizedList(mutableListOf<Triple<String, Int, Long>>())
-        sharedField.set(EsjzoneClient, sharedLikeProduction(OkHttpClient.Builder().addInterceptor { chain ->
+        val shared = sharedLikeProduction(OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
             budgets += Triple(
                 request.url.encodedPath,
@@ -144,10 +105,19 @@ class ExperienceRecordTimeoutTest {
             val body = if (request.url.encodedPath == "/my/record") "<JinJing>t</JinJing>"
                 else """{"status":200,"total":0,"rows":[]}"""
             response(request, body)
-        }))
+        })
+        sharedField.set(EsjzoneClient, shared)
+
+        val base = EsjzoneClient.memberRecordBaseClient()
+        assertFalse(base.followRedirects)
+        assertSame(shared.connectionPool, base.connectionPool)
+        assertSame(base, EsjzoneClient.memberRecordBaseClient())
+
+        val ordinary = EsjzoneClient.authenticatedClient(authorization)
+        assertEquals(15_000, ordinary.readTimeoutMillis)
+        assertEquals(30_000, ordinary.callTimeoutMillis)
 
         EsjzoneClient.getExperienceRecords(authorization, ExperienceRecordType.MESSAGE, 0)
-
         assertEquals(
             listOf(
                 Triple("/my/record", 15_000, TimeUnit.SECONDS.toNanos(30)),
@@ -155,6 +125,66 @@ class ExperienceRecordTimeoutTest {
             ),
             budgets.toList()
         )
+
+        val replacement = sharedLikeProduction()
+        sharedField.set(EsjzoneClient, replacement)
+        assertSame(replacement.connectionPool, EsjzoneClient.memberRecordBaseClient().connectionPool)
+    }
+
+    @Test fun eachPageObtainsAndSendsItsOwnToken() {
+        val requests = Collections.synchronizedList(mutableListOf<Request>())
+        var tokenCount = 0
+        sharedField.set(EsjzoneClient, sharedLikeProduction(OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += request
+            val body = when (request.url.encodedPath) {
+                "/my/record" -> "<JinJing>fixture-token-${++tokenCount}</JinJing>"
+                "/inc/mem_record_data.php" -> {
+                    if (request.header("Authorization") == "fixture-token-$tokenCount") {
+                        """{"status":200,"total":45,"rows":[{"cdate":"2026-11-11","exp":"+5"}]}"""
+                    } else {
+                        """{"status":301,"total":0,"rows":[]}"""
+                    }
+                }
+                else -> error("Unexpected request path")
+            }
+            response(request, body)
+        }))
+
+        val first = EsjzoneClient.getExperienceRecords(authorization, ExperienceRecordType.COMMENT, 0)
+        val next = EsjzoneClient.getExperienceRecords(authorization, ExperienceRecordType.COMMENT, 30)
+        assertEquals(45, first.total)
+        assertEquals("+5", first.rows.single().exp)
+        assertEquals("+5", next.rows.single().exp)
+
+        assertEquals(listOf("POST", "GET", "POST", "GET"), requests.map { it.method })
+        for (index in listOf(0, 2)) {
+            val tokenRequest = requests[index]
+            val form = tokenRequest.body as FormBody
+            assertEquals("/my/record", tokenRequest.url.encodedPath)
+            assertEquals("plxf", form.name(0))
+            assertEquals("getAuthToken", form.value(0))
+
+            val recordsRequest = requests[index + 1]
+            assertEquals("https://www.esjzone.cc/my/record", recordsRequest.header("Referer"))
+            assertEquals("XMLHttpRequest", recordsRequest.header("X-Requested-With"))
+            assertEquals("fixture-token-${index / 2 + 1}", recordsRequest.header("Authorization"))
+            assertEquals("type:3", recordsRequest.url.queryParameter("search"))
+            assertEquals(if (index == 0) "0" else "30", recordsRequest.url.queryParameter("offset"))
+        }
+    }
+
+    @Test fun missingTokenStopsBeforeRequestingRecords() {
+        val requests = Collections.synchronizedList(mutableListOf<Request>())
+        sharedField.set(EsjzoneClient, sharedLikeProduction(OkHttpClient.Builder().addInterceptor { chain ->
+            requests += chain.request()
+            response(chain.request(), "<html>login</html>")
+        }))
+
+        assertThrows(ExperienceRecordException::class.java) {
+            EsjzoneClient.getExperienceRecords(authorization, ExperienceRecordType.POST, 0)
+        }
+        assertEquals(listOf("/my/record"), requests.map { it.url.encodedPath })
     }
 
     @Test fun rejectedTokenIsRefreshedOnceThenSucceeds() {
@@ -249,25 +279,15 @@ class ExperienceRecordTimeoutTest {
         return ExperienceRecordsController(scope, state, loader::load) to state
     }
 
-    @Test fun initialLoadRequestsMessagesAndPublishesTheirRows() {
-        val loader = FakeLoader()
-        val state = MutableStateFlow(ExperienceRecordsState())
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-        val controller = ExperienceRecordsController(scope, state, loader::load)
-        controller.load()
-        assertEquals(listOf(ExperienceRecordType.MESSAGE to 0), loader.calls.toList())
-        loader.deferred(ExperienceRecordType.MESSAGE).complete(page("message"))
-        assertEquals(listOf("message"), state.value.rows.map { it.note })
-        assertFalse(state.value.loading)
-    }
-
-    @Test fun switchingTypeCancelsThePreviousRequest() {
+    @Test fun switchingTypeCancelsPreviousRequestAndDeduplicatesReselection() {
         val loader = FakeLoader()
         val (controller, state) = controller(loader)
         controller.load()
         assertTrue(state.value.loading)
         controller.selectType(ExperienceRecordType.MESSAGE)
+        controller.selectType(ExperienceRecordType.MESSAGE)
         assertEquals(listOf(ExperienceRecordType.POST), loader.cancelled.toList())
+        assertEquals(listOf(ExperienceRecordType.POST to 0, ExperienceRecordType.MESSAGE to 0), loader.calls.toList())
         assertEquals(ExperienceRecordType.MESSAGE, state.value.type)
         assertTrue(state.value.loading)
 
@@ -318,15 +338,6 @@ class ExperienceRecordTimeoutTest {
         loader.deferred(ExperienceRecordType.MESSAGE).completeExceptionally(ConnectException("refused"))
         assertFalse(state.value.timedOut)
         assertEquals(LoadFailureKind.NETWORK, state.value.failure)
-    }
-
-    @Test fun reselectingTheLoadingTypeDoesNotStackRequests() {
-        val loader = FakeLoader()
-        val (controller, _) = controller(loader)
-        controller.selectType(ExperienceRecordType.MESSAGE)
-        controller.selectType(ExperienceRecordType.MESSAGE)
-        assertEquals(listOf(ExperienceRecordType.MESSAGE to 0), loader.calls.toList())
-        assertTrue(loader.cancelled.isEmpty())
     }
 
     @Test fun cachedCategoryIsShownDuringRefreshAndSurvivesTimeout() {

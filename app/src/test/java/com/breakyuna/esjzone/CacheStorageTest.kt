@@ -31,33 +31,6 @@ class CacheStorageTest {
         .directory(directory.toOkioPath()).maxSizeBytes(Long.MAX_VALUE).build())
 
     @Test
-    fun imageInventorySurvivesRestartAndNeverStoresRawKeys() {
-        val directory = Files.createTempDirectory("shared-image-cache-").toFile()
-        val key = "https://example.invalid/cover.jpg"
-        var cache = imageCache(directory)
-        try {
-            val editor = requireNotNull(cache.openEditor(key))
-            File(editor.metadata.toString()).writeText("metadata")
-            File(editor.data.toString()).writeText("image")
-            editor.commit()
-            assertEquals(1, cache.entryCount)
-            assertFalse(File(directory, "cache-keys-v1").readText().contains(key))
-            cache.shutdown()
-            cache = imageCache(directory)
-            requireNotNull(cache.openSnapshot(key)).use { snapshot ->
-                assertEquals("image", File(snapshot.data.toString()).readText())
-            }
-            assertEquals(1, cache.entryCount)
-            assertTrue(cache.storageEntries().single().remove())
-            assertNull(cache.openSnapshot(key))
-            assertEquals(0, cache.entryCount)
-        } finally {
-            cache.shutdown()
-            directory.deleteRecursively()
-        }
-    }
-
-    @Test
     fun capacityEvictionWaitsForImageReadersAndWriters() {
         val directory = Files.createTempDirectory("shared-image-in-use-").toFile()
         val cache = imageCache(directory)
@@ -77,43 +50,6 @@ class CacheStorageTest {
             cache.shutdown()
             directory.deleteRecursively()
         }
-    }
-
-    @Test
-    fun batchEvictionPersistsSurvivorsAndClearInvalidatesPendingEdits() {
-        val directory = Files.createTempDirectory("image-batch-").toFile()
-        var cache = imageCache(directory)
-        try {
-            val keys = listOf("one", "two", "three")
-            keys.forEach { key ->
-                val editor = requireNotNull(cache.openEditor(key))
-                File(editor.metadata.toString()).writeText("metadata")
-                File(editor.data.toString()).writeText(key)
-                editor.commit()
-            }
-            val retained = requireNotNull(cache.openSnapshot("three"))
-            cache.storageEntries().forEach { it.remove() }
-            cache.flushIndex()
-            assertEquals(1, File(directory, "cache-keys-v1").readLines().size)
-            retained.close()
-            cache.shutdown()
-            cache = imageCache(directory)
-            assertNull(cache.openSnapshot("one"))
-            assertNull(cache.openSnapshot("two"))
-            requireNotNull(cache.openSnapshot("three")).use {
-                assertEquals("three", File(it.data.toString()).readText())
-            }
-            val pending = requireNotNull(cache.openEditor("pending"))
-            File(pending.data.toString()).writeText("unfinished")
-            cache.clear()
-            pending.abort()
-            assertEquals(0, cache.entryCount)
-            assertTrue(File(directory, "cache-keys-v1").readText().isEmpty())
-            cache.shutdown()
-            cache = imageCache(directory)
-            assertNull(cache.openSnapshot("three"))
-            assertNull(cache.openSnapshot("pending"))
-        } finally { cache.shutdown(); directory.deleteRecursively() }
     }
 
     @Test

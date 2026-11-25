@@ -1,8 +1,14 @@
 package com.breakyuna.esjzone
 
+import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.PageCache
+import com.breakyuna.esjzone.network.PageCacheTtl
 import com.breakyuna.esjzone.network.features.ForumBoardDataException
 import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.findForumNovelDetailUrl
+import com.breakyuna.esjzone.network.features.getCachedCommentPageSnapshot
+import com.breakyuna.esjzone.network.features.localCommentSubmission
 import com.breakyuna.esjzone.network.features.parseComments
 import com.breakyuna.esjzone.network.features.parseCommentPageSnapshot
 import com.breakyuna.esjzone.network.features.parseForumCategories
@@ -18,10 +24,13 @@ import com.breakyuna.esjzone.novellibrary.community.FORUM_GROUP_TIANKONG
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.groupForumCategories
+import java.nio.file.Files
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommunityParserTest {
@@ -305,20 +314,13 @@ class CommunityParserTest {
     }
 
     @Test
-    fun findForumNovelDetailUrl_distinguishesNovelAndDiscussionBoards() {
+    fun findForumNovelDetailUrl_readsOnlyNovelHeaderDetailLink() {
         val novelBoard = Jsoup.parse(
             "<div class=\"forum-detail\"><a href=\"/detail/1788015863.html\">身份保障妓院</a></div>"
         )
         val discussionBoard = Jsoup.parse(
             "<a href=\"/forum/1585405336/545856.html\">主题</a>"
         )
-
-        assertEquals("/detail/1788015863.html", findForumNovelDetailUrl(novelBoard))
-        assertNull(findForumNovelDetailUrl(discussionBoard))
-    }
-
-    @Test
-    fun findForumNovelDetailUrl_ignoresDetailLinksOutsideNovelHeader() {
         val boardWithTopicLink = Jsoup.parse(
             """
             <a href="/detail/999.html">来自主题正文的作品链接</a>
@@ -328,23 +330,17 @@ class CommunityParserTest {
             """.trimIndent()
         )
 
+        assertEquals("/detail/1788015863.html", findForumNovelDetailUrl(novelBoard))
+        assertNull(findForumNovelDetailUrl(discussionBoard))
         assertEquals("/detail/1788015863.html", findForumNovelDetailUrl(boardWithTopicLink))
     }
 
     @Test
-    fun validateForumTableResponse_rejectsNonSuccessApplicationStatus() {
+    fun validateForumTableResponseAndAuthToken_enforceGuards() {
         assertThrows(ForumBoardDataException::class.java) {
             validateForumTableResponse("{\"status\":301,\"total\":0,\"rows\":[]}")
         }
-    }
-
-    @Test
-    fun validateForumTableResponse_acceptsSuccessfulEmptyBoard() {
         validateForumTableResponse("{\"status\":0,\"total\":0,\"rows\":[]}")
-    }
-
-    @Test
-    fun requireForumAuthToken_rejectsEmptyToken() {
         assertThrows(ForumBoardDataException::class.java) {
             requireForumAuthToken("  ")
         }
@@ -399,7 +395,7 @@ class CommunityParserTest {
     }
 
     @Test
-    fun parseForumCategories_splitsSectionsIntoEsjAndTiankongWithFiveToThreeRatio() {
+    fun parseAndGroupForumCategories_splitsIntoEsjAndTiankongFiveToThree() {
         val document = Jsoup.parse(
             """
             <section id="forum-boards">
@@ -431,12 +427,8 @@ class CommunityParserTest {
 
         val categories = parseForumCategories(document)
         assertEquals(8, categories.size)
-
         val esjCategories = categories.filter { it.groupName == FORUM_GROUP_ESJ }
         val tiankongCategories = categories.filter { it.groupName == FORUM_GROUP_TIANKONG }
-
-        assertEquals(5, esjCategories.size)
-        assertEquals(3, tiankongCategories.size)
         assertEquals(
             listOf("1584680829", "1584678947", "1584622251", "1584622325", "1584679807"),
             esjCategories.map { it.id }
@@ -445,38 +437,141 @@ class CommunityParserTest {
             listOf("1584622376", "1584622613", "1584622628"),
             tiankongCategories.map { it.id }
         )
-    }
 
-    @Test
-    fun groupForumCategories_partitionsCategoriesFiveToThree() {
-        val categories = listOf(
-            ForumCategory("1584680829", null, "B1", null, null, "/forum/1584680829/"),
-            ForumCategory("1584678947", null, "B2", null, null, "/forum/1584678947/"),
-            ForumCategory("1584622251", null, "B3", null, null, "/forum/1584622251/"),
-            ForumCategory("1584622325", null, "B4", null, null, "/forum/1584622325/"),
-            ForumCategory("1584679807", null, "B5", null, null, "/forum/1584679807/"),
-            ForumCategory("1584622376", null, "B6", null, null, "/forum/1584622376/"),
-            ForumCategory("1584622613", null, "B7", null, null, "/forum/1584622613/"),
-            ForumCategory("1584622628", null, "B8", null, null, "/forum/1584622628/")
-        )
+        val knownGrouped = groupForumCategories(categories.map { it.copy(groupName = null) })
+        assertEquals(listOf(FORUM_GROUP_ESJ, FORUM_GROUP_TIANKONG), knownGrouped.keys.toList())
+        assertEquals(5, knownGrouped[FORUM_GROUP_ESJ]?.size)
+        assertEquals(3, knownGrouped[FORUM_GROUP_TIANKONG]?.size)
 
-        val grouped = groupForumCategories(categories)
-        assertEquals(listOf(FORUM_GROUP_ESJ, FORUM_GROUP_TIANKONG), grouped.keys.toList())
-        assertEquals(5, grouped[FORUM_GROUP_ESJ]?.size)
-        assertEquals(3, grouped[FORUM_GROUP_TIANKONG]?.size)
-    }
-
-    @Test
-    fun groupForumCategories_fallsBackToFiveThreeSplitForUnassignedIds() {
-        val categories = (1..8).map { i ->
+        val fallback = (1..8).map { i ->
             ForumCategory("unknown-$i", null, "Board $i", null, null, "/forum/unknown-$i/")
         }
+        val fallbackGrouped = groupForumCategories(fallback)
+        assertEquals(listOf(FORUM_GROUP_ESJ, FORUM_GROUP_TIANKONG), fallbackGrouped.keys.toList())
+        assertEquals(
+            listOf("unknown-1", "unknown-2", "unknown-3", "unknown-4", "unknown-5"),
+            fallbackGrouped[FORUM_GROUP_ESJ]?.map { it.id }
+        )
+        assertEquals(
+            listOf("unknown-6", "unknown-7", "unknown-8"),
+            fallbackGrouped[FORUM_GROUP_TIANKONG]?.map { it.id }
+        )
+    }
 
-        val grouped = groupForumCategories(categories)
-        assertEquals(listOf(FORUM_GROUP_ESJ, FORUM_GROUP_TIANKONG), grouped.keys.toList())
-        assertEquals(5, grouped[FORUM_GROUP_ESJ]?.size)
-        assertEquals(3, grouped[FORUM_GROUP_TIANKONG]?.size)
-        assertEquals(listOf("unknown-1", "unknown-2", "unknown-3", "unknown-4", "unknown-5"), grouped[FORUM_GROUP_ESJ]?.map { it.id })
-        assertEquals(listOf("unknown-6", "unknown-7", "unknown-8"), grouped[FORUM_GROUP_TIANKONG]?.map { it.id })
+    @Test
+    fun commentsWithoutProfileLinks_preserveNamesAndReplyTokens() {
+        val document = Jsoup.parse(
+            """
+            <div id="comments">
+              <div class="comment" id="comment-87246">
+                <div class="comment-header"><span class="comment-title"><a href="/my/profile?uid=3115">Jjnsn</a></span></div>
+                <p class="comment-text">感谢翻译</p>
+              </div>
+              <div class="comment" id="comment-89742">
+                <div class="comment-header"><span class="comment-title">豆腐</span></div>
+                <p class="comment-text">想問問文庫和web版有不同嗎？</p>
+                <a class="forum_reply" data-comment="89742">回覆</a>
+              </div>
+              <div class="comment" id="comment-95446">
+                <div class="comment-header"><span class="comment-title">++片翼天使++</span></div>
+                <p class="comment-text">有</p>
+              </div>
+              <div class="comment" id="comment-95863">
+                <div class="comment-header"><span class="comment-title">閒閒</span></div>
+                <p class="comment-text">因为男主现时近战绝不NB</p>
+              </div>
+            </div>
+            """.trimIndent(),
+            "https://example.test/"
+        )
+
+        val comments = parseComments(document, "fixture-post")
+
+        assertEquals(listOf("Jjnsn", "豆腐", "++片翼天使++", "閒閒"), comments.map { it.authorName })
+        assertEquals("3115", comments.first().authorId)
+        assertEquals("https://example.test/my/profile?uid=3115", comments.first().authorUrl)
+        assertTrue(comments.drop(1).all { it.authorId == null && it.authorUrl == null })
+        assertEquals("89742", comments[1].replyToken)
+    }
+
+    @Test
+    fun confirmedCommentIsAppendedWithoutWaitingForAServerCommentId() {
+        val previous = localCommentSubmission(
+            parentId = "456",
+            content = "Earlier comment",
+            replyToken = null,
+            previousComments = emptyList(),
+            authorName = "Earlier reader",
+            authorAvatarUrl = null,
+            createdCommentId = "123"
+        ).createdComment
+        val comments = List(15) { previous.copy(id = "${160275 + it}", floor = "#${160275 + it}") }
+
+        val result = localCommentSubmission(
+            parentId = "456",
+            content = "New reply\nSecond line",
+            replyToken = "123-42",
+            previousComments = comments,
+            authorName = "Current reader",
+            authorAvatarUrl = "/avatar.png",
+            requestSentAt = "2026-10-03 14:05:06"
+        )
+
+        assertEquals(comments, result.comments.dropLast(1))
+        assertEquals(result.createdComment, result.comments.last())
+        assertTrue(result.createdComment.id.isNotBlank())
+        assertFalse(result.createdComment.id in comments.map { it.id })
+        assertEquals("456", result.createdComment.parentPostId)
+        assertEquals("New reply\nSecond line", result.createdComment.contentText)
+        assertEquals("123-42", result.createdComment.replyToken)
+        assertEquals("Current reader", result.createdComment.authorName)
+        assertEquals("/avatar.png", result.createdComment.authorAvatarUrl)
+        assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
+        assertEquals("#160290", result.createdComment.floor)
+        assertEquals("#160289", result.comments[result.comments.lastIndex - 1].floor)
+        assertEquals(2, result.createdComment.pageGroup)
+    }
+
+    @Test
+    fun acceptedResponseKeepsItsServerCommentId() {
+        val result = localCommentSubmission(
+            parentId = "456",
+            content = "New comment",
+            replyToken = null,
+            previousComments = emptyList(),
+            authorName = null,
+            authorAvatarUrl = null,
+            createdCommentId = "789",
+            requestSentAt = "2026-10-03 14:05:06"
+        )
+        assertEquals("789", result.createdComment.id)
+        assertNull(result.createdComment.floor)
+        assertEquals("2026-10-03 14:05:06", result.createdComment.createdAt)
+        assertEquals(listOf(result.createdComment), result.comments)
+    }
+
+    @Test
+    fun initialCommentsReadIsCacheOnlyAndAcceptsStaleCommentsForDisplay() {
+        val directory = Files.createTempDirectory("comment-cache-").toFile()
+        PageCache.initializeDirectory(directory)
+        val auth = Authorization()
+        val url = "https://www.esjzone.cc/forum/9001/1.html"
+        val key = EsjzoneClient.pageCacheKey(auth, url)
+        try {
+            assertNull(EsjzoneClient.getCachedCommentPageSnapshot(auth, url))
+            val html = requireNotNull(javaClass.getResource("/esj/comments-pages.html"))
+                .readText()
+            assertTrue(PageCache.write(key, html,
+                System.currentTimeMillis() - PageCacheTtl.COMMUNITY - 1_000L))
+            val snapshot = requireNotNull(EsjzoneClient.getCachedCommentPageSnapshot(auth, url))
+            assertEquals(16, snapshot.comments.size)
+            assertEquals("8101", snapshot.comments.first().id)
+            assertEquals("Comment 16", snapshot.comments.last().contentText)
+
+            assertTrue(PageCache.write(key, "<html><title>Just a moment</title></html>"))
+            assertNull(EsjzoneClient.getCachedCommentPageSnapshot(auth, url))
+            PageCache.clear()
+            assertNull(EsjzoneClient.getCachedCommentPageSnapshot(auth, url))
+        } finally { directory.deleteRecursively() }
     }
 }

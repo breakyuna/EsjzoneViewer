@@ -1,23 +1,45 @@
 package com.breakyuna.esjzone
 
-import com.breakyuna.esjzone.ui.reader.readerBodyListIndex
-import com.breakyuna.esjzone.ui.reader.readerItemForContentPosition
-import com.breakyuna.esjzone.ui.reader.ReaderScrollAnchor
-import com.breakyuna.esjzone.ui.reader.readerRebasedScrollAnchor
-import com.breakyuna.esjzone.ui.reader.readerInitialBodyIndex
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.ui.page.ReaderChapter
+import com.breakyuna.esjzone.ui.page.ReaderDisplayItem
+import com.breakyuna.esjzone.ui.page.ReaderPaginationSnapshot
+import com.breakyuna.esjzone.ui.page.chapterIdentity
+import com.breakyuna.esjzone.ui.reader.ReaderPage
+import com.breakyuna.esjzone.ui.reader.ReaderScrollAnchor
+import com.breakyuna.esjzone.ui.reader.readerBodyListIndex
+import com.breakyuna.esjzone.ui.reader.readerInitialBodyIndex
+import com.breakyuna.esjzone.ui.reader.readerItemForContentPosition
+import com.breakyuna.esjzone.ui.reader.readerRebasedScrollAnchor
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderContentPositionTest {
     private val chapterKey = "/forum/1/2.html"
     private val document = ReaderChapterDocument(ReaderChapterRef("Chapter", chapterKey),
         (0 until 100).map { ReaderBlock.Text("Saved paragraph $it") }, contentFingerprint = "a".repeat(64))
+
+    private fun readerChapter(number: Int, text: String = "Body $number"): ReaderChapter {
+        val chapter = Chapter("Chapter $number", "/forum/9001/$number.html", false)
+        return ReaderChapter(chapter, ReaderChapterDocument(
+            ReaderChapterRef(chapter.name, chapter.url), listOf(ReaderBlock.Text(text))))
+    }
+
+    private fun paginationSnapshot(layout: List<Any?>, entry: ReaderChapter): ReaderPaginationSnapshot {
+        val page = ReaderPage(emptyList(), -1f)
+        val key = chapterIdentity(entry.chapter)
+        return ReaderPaginationSnapshot(layout + listOf(listOf(entry)), layout,
+            mapOf(entry to listOf(page)),
+            listOf(ReaderDisplayItem("$key|page:0", key, entry, 0, 1, emptyList(), page)))
+    }
 
     @Test
     fun firstBodyMeasureUsesExactParagraphEvenWhenLegacyProgressDisagrees() {
@@ -48,31 +70,16 @@ class ReaderContentPositionTest {
     }
 
     @Test
-    fun modeSwitchKeepsTheSourceParagraphAcrossUnequalPageLengths() {
+    fun readerItemForContentPositionTracksSourceAcrossModeSwitchRepaginationAndBoundaries() {
         val pages = listOf(-1f, 0.25f, 0.8f, 2f, 5f)
         val scrollBlocks = listOf(-1f, 0f, 1f, 2f, 3f, 4f, 5f)
         assertEquals(3, readerItemForContentPosition(pages, 3.4f))
         assertEquals(4, readerItemForContentPosition(scrollBlocks, 3.4f))
-    }
-
-    @Test
-    fun repaginationUsesSourcePositionRatherThanTheOldPageNumber() {
         assertEquals(3, readerItemForContentPosition(listOf(-1f, 0f, 0.5f, 1f, 2f), 1.2f))
         assertEquals(1, readerItemForContentPosition(listOf(-1f, 0f, 2f), 1.2f))
-    }
-
-    @Test
-    fun headingImagesAndEmptyLayoutHaveStableTargets() {
         assertEquals(0, readerItemForContentPosition(listOf(-1f, 0f, 1f), -1f))
         assertEquals(2, readerItemForContentPosition(listOf(-1f, 0f, 1f), 1f))
         assertNull(readerItemForContentPosition(emptyList(), 0f))
-    }
-
-    @Test
-    fun previousVerificationOffsetsBothTheFirstAndLastBodyItems() {
-        assertEquals(0, readerBodyListIndex(0, false, false))
-        assertEquals(1, readerBodyListIndex(0, true, false))
-        assertEquals(31, readerBodyListIndex(30, true, false))
     }
 
     @Test
@@ -98,33 +105,24 @@ class ReaderContentPositionTest {
     }
 
     @Test
-    fun trimmingLongHeadChapterKeepsTheSameParagraphAndPixelOffset() {
-        val oldBody = (1..9).flatMap { chapter ->
+    fun headTrimAndPrependRebaseVisibleParagraphAndOffset() {
+        val longHead = (1..9).flatMap { chapter ->
             (0 until if (chapter == 1) 600 else 40).map { "chapter-$chapter|block:$it" }
         }
-        val newBody = oldBody.drop(600) + (0 until 40).map { "chapter-10|block:$it" }
-        val visible = ReaderScrollAnchor("chapter-9|block:30", oldBody.indexOf("chapter-9|block:30"), 73)
-        val indices = newBody.mapIndexed { index, key -> key to index }.toMap()
+        val trimmedLong = longHead.drop(600) + (0 until 40).map { "chapter-10|block:$it" }
+        val tailVisible = ReaderScrollAnchor("chapter-9|block:30", longHead.indexOf("chapter-9|block:30"), 73)
+        val restoredTail = requireNotNull(readerRebasedScrollAnchor(longHead.first(), trimmedLong.first(),
+            tailVisible, trimmedLong.mapIndexed { index, key -> key to index }.toMap(), bodyStartOffset = 0))
+        assertNotEquals(tailVisible.key, trimmedLong[tailVisible.index.coerceAtMost(trimmedLong.lastIndex)])
+        assertEquals(tailVisible.key, trimmedLong[restoredTail.index])
+        assertEquals(tailVisible.index - 600, restoredTail.index)
+        assertEquals(73, restoredTail.offset)
 
-        val restored = requireNotNull(readerRebasedScrollAnchor(oldBody.first(), newBody.first(),
-            visible, indices, bodyStartOffset = 0))
-
-        // Keeping the old numeric index would clamp the viewport to chapter 10's end.
-        assertNotEquals(visible.key, newBody[visible.index.coerceAtMost(newBody.lastIndex)])
-        assertEquals(visible.key, newBody[restored.index])
-        assertEquals(visible.index - 600, restored.index)
-        assertEquals(73, restored.offset)
-    }
-
-    @Test
-    fun trimmingMultipleChaptersAndPrependingBothPreserveTheVisibleBody() {
         val body = (1..11).flatMap { chapter -> (0 until 160).map { "chapter-$chapter|block:$it" } }
         val visible = ReaderScrollAnchor("chapter-5|block:20", body.indexOf("chapter-5|block:20"), 42)
         val trimmed = body.drop(320)
-        val trimmedIndices = trimmed.mapIndexed { index, key -> key to index }.toMap()
         val restored = requireNotNull(readerRebasedScrollAnchor(body.first(), trimmed.first(),
-            visible, trimmedIndices, bodyStartOffset = 2))
-
+            visible, trimmed.mapIndexed { index, key -> key to index }.toMap(), bodyStartOffset = 2))
         assertEquals(visible.key, trimmed[restored.index - 2])
         assertEquals(visible.index - 320 + 2, restored.index)
         assertEquals(visible.offset, restored.offset)
@@ -143,5 +141,27 @@ class ReaderContentPositionTest {
         assertNull(readerRebasedScrollAnchor("heading", "replacement", visible,
             mapOf("replacement" to 0), 0))
         assertNull(readerRebasedScrollAnchor("heading", null, visible, emptyMap(), 0))
+    }
+
+    @Test
+    fun paginationSnapshotReusesPreparedChapterOnlyUntilLayoutWindowBodyOrUnlockChanges() {
+        val layout = listOf<Any?>(390, 844, "original")
+        val current = readerChapter(2)
+        val prepared = paginationSnapshot(layout, current)
+        assertTrue(prepared.hasReadablePage(layout, current, listOf(current, readerChapter(3))))
+        assertTrue(prepared.hasReadablePage(layout, current, listOf(readerChapter(1), current)))
+        assertFalse(prepared.hasReadablePage(layout, readerChapter(3), listOf(current, readerChapter(3))))
+        assertFalse(prepared.hasReadablePage(listOf(844, 390, "original"), current, listOf(current)))
+        assertFalse(prepared.hasReadablePage(layout, current, listOf(readerChapter(3))))
+
+        val replacement = readerChapter(2, "Updated body")
+        assertFalse(prepared.hasReadablePage(layout, current, listOf(replacement)))
+        assertFalse(prepared.hasReadablePage(layout, replacement, listOf(replacement)))
+
+        val locked = ReaderChapter.passwordRequired(current.chapter)
+        val lockedSnapshot = paginationSnapshot(layout, locked)
+        assertTrue(lockedSnapshot.hasReadablePage(layout, locked, listOf(locked)))
+        assertFalse(lockedSnapshot.hasReadablePage(layout, locked, listOf(current)))
+        assertFalse(lockedSnapshot.hasReadablePage(layout, current, listOf(current)))
     }
 }

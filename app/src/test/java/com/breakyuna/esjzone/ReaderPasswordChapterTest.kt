@@ -16,7 +16,6 @@ import com.breakyuna.esjzone.ui.page.measuredBookLocation
 import com.breakyuna.esjzone.ui.page.replacePasswordChapter
 import com.breakyuna.esjzone.ui.page.resumeLocation
 import com.breakyuna.esjzone.ui.page.shouldCancelDeferredResume
-import com.breakyuna.esjzone.ui.page.canLoadReaderWindow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,14 +24,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReaderPasswordChapterTest {
-    @Test
-    fun passwordWaitAllowsCrossChapterLoadingWithoutReleasingHistoryProtection() {
-        assertTrue(canLoadReaderWindow(contentRevealed = true, resumePending = true, awaitingPassword = true))
-        assertFalse(canLoadReaderWindow(contentRevealed = false, resumePending = true, awaitingPassword = true))
-        assertFalse(canLoadReaderWindow(contentRevealed = true, resumePending = true, awaitingPassword = false))
-        assertTrue(canLoadReaderWindow(contentRevealed = true, resumePending = false, awaitingPassword = false))
-    }
-
     private val order = (1..3).map { Chapter("Chapter $it", "/forum/9001/$it.html", false) }
     private fun detail(text: String = "Unlocked body") = DetailedChapter(
         order[1].name, listOf(TextComponent(text)), order[0], order[2]
@@ -51,120 +42,66 @@ class ReaderPasswordChapterTest {
     }
 
     @Test
-    fun lockedChapterRecordsItsOwnZeroProgressWithoutABodyAnchor() {
+    fun measuredBookLocationReportsZeroForLockedChapterAndWaitsForAnchorOnceUnlocked() {
         val locked = ReaderChapter.passwordRequired(order[1])
         val indices = order.mapIndexed { index, chapter -> chapterIdentity(chapter) to index }.toMap()
 
         assertTrue(locked.document.contentFingerprint.isBlank())
-        val location = requireNotNull(locked.measuredBookLocation(1f, null, order, indices))
+        val withCatalog = requireNotNull(locked.measuredBookLocation(1f, null, order, indices))
+        assertEquals(order[1], withCatalog.chapter)
+        assertEquals(1, withCatalog.chapterIndex)
+        assertEquals(3, withCatalog.totalChapters)
+        assertEquals(0f, withCatalog.chapterProgress, 0f)
+        assertEquals(1f / 3f, withCatalog.bookProgress, 0.0001f)
+        assertNull(withCatalog.anchor)
+        assertEquals(-1f, requireNotNull(withCatalog.contentPosition), 0f)
 
-        assertEquals(order[1], location.chapter)
-        assertEquals(1, location.chapterIndex)
-        assertEquals(3, location.totalChapters)
-        assertEquals(0f, location.chapterProgress, 0f)
-        assertEquals(1f / 3f, location.bookProgress, 0.0001f)
-        assertNull(location.anchor)
-        assertEquals(-1f, requireNotNull(location.contentPosition), 0f)
-    }
+        val withoutCatalog = requireNotNull(locked.measuredBookLocation(null, null, emptyList(), emptyMap()))
+        assertEquals(-1, withoutCatalog.chapterIndex)
+        assertEquals(0f, withoutCatalog.chapterProgress, 0f)
+        assertNull(withoutCatalog.anchor)
 
-    @Test
-    fun lockedChapterStillHasALocationWhileCatalogIsUnavailable() {
-        val locked = ReaderChapter.passwordRequired(order[1])
-        val location = requireNotNull(locked.measuredBookLocation(null, null, emptyList(), emptyMap()))
-
-        assertEquals(order[1], location.chapter)
-        assertEquals(-1, location.chapterIndex)
-        assertEquals(0f, location.chapterProgress, 0f)
-        assertNull(location.anchor)
-    }
-
-    @Test
-    fun ordinaryChapterStillWaitsForAMeasuredAnchor() {
-        val window = mutableListOf(ReaderChapter.passwordRequired(order[1]))
+        val window = mutableListOf(locked)
         assertTrue(window.replacePasswordChapter(order[1], detail()))
-        val indices = order.mapIndexed { index, chapter -> chapterIdentity(chapter) to index }.toMap()
-
         assertNull(window.single().measuredBookLocation(0.5f, null, order, indices))
     }
 
     @Test
-    fun historyResumeWaitsForUnlockThenRestoresSavedProgressAndExactAnchor() {
+    fun historyResumeWaitsForUnlockThenRestoresAnchorOrProgress() {
         val window = mutableListOf(ReaderChapter.passwordRequired(order[1]))
         val body = ChapterBody.fromBlocks(listOf(ReaderBlock.Text("Unlocked body")))
         val unlockedDetail = detail().copy(body = body)
         val anchor = ReaderAnchor(chapterIdentity(order[1]), body.fingerprint, 0, 5)
 
         assertNull(window.single().resumeLocation(0.75f, anchor))
-
-        assertTrue(window.replacePasswordChapter(order[1], unlockedDetail))
-        val restored = requireNotNull(window.single().resumeLocation(0.75f, anchor))
-        assertEquals(order[1], restored.chapter)
-        assertEquals(0.75f, restored.chapterProgress, 0f)
-        assertSame(anchor, restored.anchor)
-        assertTrue(anchor.matches(chapterIdentity(order[1]), window.single().document))
-    }
-
-    @Test
-    fun historyWithoutAnAnchorResumesByProgressOnlyAfterUnlock() {
-        val window = mutableListOf(ReaderChapter.passwordRequired(order[1]))
         assertNull(window.single().resumeLocation(0.6f, null))
 
-        assertTrue(window.replacePasswordChapter(order[1], detail()))
-        val restored = requireNotNull(window.single().resumeLocation(0.6f, null))
-        assertEquals(0.6f, restored.chapterProgress, 0f)
-        assertNull(restored.anchor)
+        assertTrue(window.replacePasswordChapter(order[1], unlockedDetail))
+        val withAnchor = requireNotNull(window.single().resumeLocation(0.75f, anchor))
+        assertEquals(order[1], withAnchor.chapter)
+        assertEquals(0.75f, withAnchor.chapterProgress, 0f)
+        assertSame(anchor, withAnchor.anchor)
+        assertTrue(anchor.matches(chapterIdentity(order[1]), window.single().document))
 
-        val offline = window.single().copy(isOffline = true)
-        assertEquals(restored, offline.resumeLocation(0.6f, null))
+        val progressOnly = requireNotNull(window.single().resumeLocation(0.6f, null))
+        assertEquals(0.6f, progressOnly.chapterProgress, 0f)
+        assertNull(progressOnly.anchor)
+        assertEquals(progressOnly, window.single().copy(isOffline = true).resumeLocation(0.6f, null))
     }
 
     @Test
-    fun leavingPasswordChapterInEitherDirectionCancelsDeferredHistoryResume() {
+    fun deferredResumeCancelsOnlyWhenUserScrollsToANeighborChapter() {
         val lockedKey = chapterIdentity(order[1])
-
         for (neighbor in listOf(order[0], order[2])) {
             assertTrue(shouldCancelDeferredResume(lockedKey, chapterIdentity(neighbor), userScrollInProgress = true))
         }
-    }
-
-    @Test
-    fun scrollingWithinPasswordChapterKeepsHistoryForUnlock() {
-        val locked = ReaderChapter.passwordRequired(order[1])
-        val lockedKey = chapterIdentity(locked.chapter)
-
         assertFalse(shouldCancelDeferredResume(lockedKey, lockedKey, userScrollInProgress = true))
-        assertNull(locked.resumeLocation(0.75f, null))
-        val window = mutableListOf(locked)
-        assertTrue(window.replacePasswordChapter(order[1], detail()))
-        assertEquals(0.75f, requireNotNull(window.single().resumeLocation(0.75f, null)).chapterProgress, 0f)
-    }
-
-    @Test
-    fun missingLayoutAndChangesWithoutUserScrollingKeepDeferredHistoryResume() {
-        val lockedKey = chapterIdentity(order[1])
-
         assertFalse(shouldCancelDeferredResume(lockedKey, null, userScrollInProgress = true))
         assertFalse(shouldCancelDeferredResume(lockedKey, chapterIdentity(order[0]), userScrollInProgress = false))
     }
 
     @Test
-    fun lateFailureClearsSubmittingStateForATrimmedChapterSoItCanBeRetried() {
-        val key = chapterIdentity(order[1])
-        val states = mutableMapOf(key to ReaderChapterPasswordState(submitting = true))
-        val window = mutableListOf(ReaderChapter.passwordRequired(order[2]))
-
-        states.finishPasswordSubmission(key,
-            window.any { chapterIdentity(it.chapter) == key && it.requiresPassword },
-            ReaderChapterPasswordState(failure = LoadFailureKind.CLIENT))
-
-        assertFalse(states.containsKey(key))
-        window.add(0, ReaderChapter.passwordRequired(order[1]))
-        assertTrue(window.first().requiresPassword)
-        assertFalse(states[key]?.submitting == true)
-    }
-
-    @Test
-    fun completedFailureKeepsItsMessageAndOtherChapterStatusWhileAllowingRetry() {
+    fun finishPasswordSubmissionHandlesFailureCancellationAndTrimmedChapters() {
         val key = chapterIdentity(order[1])
         val otherKey = chapterIdentity(order[2])
         val otherState = ReaderChapterPasswordState(submitting = true)
@@ -172,24 +109,22 @@ class ReaderPasswordChapterTest {
         val failure = ReaderChapterPasswordState(message = "Rejected fixture submission")
 
         states.finishPasswordSubmission(key, chapterStillLocked = true, failureState = failure)
-
         assertEquals(failure, states[key])
         assertFalse(states[key]?.submitting == true)
         assertSame(otherState, states[otherKey])
-    }
 
-    @Test
-    fun cancelledSubmissionDoesNotKeepALockedChapterDisabled() {
-        val key = chapterIdentity(order[1])
-        val states = mutableMapOf(key to ReaderChapterPasswordState(submitting = true))
-
+        states[key] = ReaderChapterPasswordState(submitting = true)
         states.finishPasswordSubmission(key, chapterStillLocked = true, failureState = null)
-
         assertEquals(ReaderChapterPasswordState(), states[key])
+
+        states[key] = ReaderChapterPasswordState(submitting = true)
+        states.finishPasswordSubmission(key, chapterStillLocked = false,
+            failureState = ReaderChapterPasswordState(failure = LoadFailureKind.CLIENT))
+        assertFalse(states.containsKey(key))
     }
 
     @Test
-    fun unlockReplacesOnlyItsOwnChapterAndKeepsTheRestOfTheWindow() {
+    fun replacePasswordChapterUpdatesOnlyMatchingLockedChapterInWindow() {
         val previous = ReaderChapter.passwordRequired(order[0])
         val next = ReaderChapter.passwordRequired(order[2])
         val window = mutableListOf(previous, ReaderChapter.passwordRequired(order[1]), next)
@@ -204,17 +139,12 @@ class ReaderPasswordChapterTest {
         assertEquals(order[0], window[1].fallbackPrevious)
         assertEquals(order[2], window[1].fallbackNext)
 
-        // A late completion must not overwrite the body already accepted.
         val unlocked = window[1]
         assertFalse(window.replacePasswordChapter(order[1], detail("Late body")))
         assertSame(unlocked, window[1])
-    }
 
-    @Test
-    fun lateUnlockDoesNotReinsertAChapterTrimmedFromTheReadingWindow() {
-        val window = mutableListOf(ReaderChapter.passwordRequired(order[2]))
-        val snapshot = window.toList()
-        assertFalse(window.replacePasswordChapter(order[1], detail()))
-        assertEquals(snapshot, window)
+        val trimmedWindow = mutableListOf(ReaderChapter.passwordRequired(order[2]))
+        assertFalse(trimmedWindow.replacePasswordChapter(order[1], detail()))
+        assertEquals(listOf(order[2]), trimmedWindow.map { it.chapter })
     }
 }

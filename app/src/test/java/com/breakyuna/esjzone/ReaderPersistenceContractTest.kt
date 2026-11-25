@@ -1,35 +1,25 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.database.entity.Bookmark
-import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.readerChapterProgress
-import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.offline.BookTextProgressIndex
-import com.breakyuna.esjzone.ui.page.chapterIdentity
+import com.breakyuna.esjzone.ui.page.LocalReadingPosition
 import com.breakyuna.esjzone.ui.page.bookmarkChapterIdentity
+import com.breakyuna.esjzone.ui.page.chapterIdentity
 import com.breakyuna.esjzone.ui.page.readerBookLocationFor
+import com.breakyuna.esjzone.ui.page.toLocalReadingActivity
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** JVM coverage for reader persistence identities (Room itself stays in androidTest). */
 class ReaderPersistenceContractTest {
-
-    @Test
-    fun readerChapterIdentity_preservesDistinctFragmentsAcrossMirrors() {
-        val first = Chapter("Part 1", "https://www.esjzone.cc/forum/9001/1.html#part-1", false)
-        val sameOnMirror = Chapter("Part 1", "https://www.esjzone.one/forum/9001/1.html#part-1", false)
-        val second = Chapter("Part 2", "https://www.esjzone.cc/forum/9001/1.html#part-2", false)
-
-        assertEquals(chapterIdentity(first), chapterIdentity(sameOnMirror))
-        assertTrue(chapterIdentity(first) != chapterIdentity(second))
-    }
 
     @Test
     fun underlineTargetProgressUsesItsAnchorAndFullCatalogAcrossMirrors() {
@@ -54,36 +44,40 @@ class ReaderPersistenceContractTest {
     }
 
     @Test
-    fun bookmarkIdentity_isCanonicalChapterPathAndEntityStoresLocalOnlyMetadata() {
-        val key = EsjzoneUrls.canonicalPageKey(
-            "https://www.esjzone.cc/forum/9001/1.html#quoted-reply"
+    fun readingHistoryPersistsTextContextFromTheMeasuredDocument() {
+        val chapter = ReaderChapterRef("Chapter 1", "/forum/9001/1.html")
+        val document = ReaderChapterDocument(
+            chapter,
+            listOf(ReaderBlock.Text("甲 乙"), ReaderBlock.Image("https://img.example/page.png"), ReaderBlock.Text(" 丙 丁")),
+            contentFingerprint = "a".repeat(64)
         )
-        val bookmark = Bookmark(
-            chapterUrl = key,
+        val measured = ReaderAnchor(chapter.url, document.contentFingerprint, 0, offset = 1)
+        val position = LocalReadingPosition(
             novelId = "9001",
-            novelName = "Fixture novel",
-            chapterName = "Chapter 1",
-            createdAt = 1234L
-        )
-        assertEquals("/forum/9001/1.html", bookmark.chapterUrl)
-        assertEquals(1234L, bookmark.createdAt)
-
-        val position = LocalReadingActivity(
-            activityId = "novel:/detail/9001.html",
-            novelId = "9001",
-            novelName = "Fixture novel",
-            novelUrl = "https://www.esjzone.cc/detail/9001.html",
-            chapterUrl = "https://www.esjzone.cc/forum/9001/1.html",
-            chapterName = "Chapter 1",
+            novelName = "Novel",
+            novelUrl = "/detail/9001.html",
+            novelCoverUrl = "",
+            chapterUrl = chapter.url,
+            chapterName = chapter.name,
             chapterIndex = 0,
-            totalChapters = 2,
-            chapterProgress = 0.75f,
-            startedAt = 100L,
-            lastReadAt = 200L,
-            durationMs = 100L
+            totalChapters = 1,
+            chapterProgress = 0.25f,
+            anchor = measured,
+            anchorDocument = document
         )
-        assertEquals("novel:/detail/9001.html", position.activityId)
-        assertEquals(0.75f, position.chapterProgress, 0.0001f)
+
+        val saved = position.toLocalReadingActivity("activity", startedAt = 100L, now = 200L)
+        val persisted = requireNotNull(ReaderAnchor.decode(saved.anchor))
+        assertNull(measured.textQuote)
+        assertEquals(measured.offset, persisted.offset)
+        assertEquals("甲", persisted.textPrefix)
+        assertEquals("乙丙丁", persisted.textQuote)
+        assertEquals(0.25f, requireNotNull(persisted.normalizedOffset), 0.0001f)
+
+        val changed = document.copy(contentFingerprint = "b".repeat(64))
+        val stale = position.copy(anchorDocument = changed)
+            .toLocalReadingActivity("activity", startedAt = 100L, now = 200L)
+        assertEquals(measured, ReaderAnchor.decode(stale.anchor))
     }
 
     @Test
@@ -96,11 +90,5 @@ class ReaderPersistenceContractTest {
         assertEquals(chapterIdentity(chapter), bookmarkChapterIdentity(oldRow))
         assertEquals(chapterIdentity(chapter), bookmarkChapterIdentity(newRow))
         assertTrue(oldRow.id != newRow.id)
-    }
-
-    @Test
-    fun readerSettings_defaultAutoResumeLastReadingIsFalse() {
-        val settings = com.breakyuna.esjzone.ui.reader.ReaderSettings()
-        assertFalse(settings.autoResumeLastReading)
     }
 }

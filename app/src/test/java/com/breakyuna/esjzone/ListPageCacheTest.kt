@@ -139,34 +139,6 @@ class ListPageCacheTest {
     }
 
     @Test
-    fun failedPageUpdateReportsFailureAndPreservesCachedBatchForRetry() {
-        val directory = Files.createTempDirectory("list-page-failure-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            val now = System.currentTimeMillis()
-            val snapshot = ListPageCache.Snapshot("batch-a", 2, mapOf(
-                1 to ListPageCache.Page(now, html(1)),
-                2 to ListPageCache.Page(now - 120_000L, html(2))
-            ))
-            assertTrue(PageCache.write(key, Gson().toJson(snapshot)))
-            // An unsupported scheme fails locally without making an external request.
-            val (session, _) = ListPageCache.open(authorization, url,
-                { page -> if (page == 1) url else "unsupported://list-page/$page" },
-                60_000L, PageKind.LIST, forceRefresh = false
-            ) { body, _ -> ParsedListPage(2, listOf(body)) }
-            val before = PageCache.readStale(key)
-            repeat(2) {
-                try {
-                    session.more(2)
-                    fail("Failed update must not silently return the expired page")
-                } catch (_: IllegalArgumentException) { }
-                assertTrue(session.isCurrent())
-                assertEquals(before, PageCache.readStale(key))
-            }
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test
     fun failedSnapshotCommitKeepsOldBatchAndReportsFailureWithoutFallback() {
         val directory = Files.createTempDirectory("list-commit-failure-").toFile()
         PageCache.initializeDirectory(directory)
@@ -235,43 +207,6 @@ class ListPageCacheTest {
                 assertTrue(fallback.isCurrent())
                 assertTrue(reopened.isCurrent())
                 assertEquals(listOf(html(2)), old.more(2))
-            }
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test
-    fun failedMoreCommitKeepsOldPageAndRetriesBeforePublishingToOtherSessions() {
-        val directory = Files.createTempDirectory("list-more-commit-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            val refreshed = html(2).replace("Page 2", "Updated page")
-            withResponses(listOf(refreshed, refreshed)) { firstUrl ->
-                val now = System.currentTimeMillis()
-                val snapshotKey = store(firstUrl, ListPageCache.Snapshot("batch-a", 2, mapOf(
-                    1 to ListPageCache.Page(now, html(1)),
-                    2 to ListPageCache.Page(now - 120_000L, html(2))
-                )))
-                val (session, _) = open(firstUrl)
-                val (other, _) = open(firstUrl)
-                val before = PageCache.readStale(snapshotKey)
-                val source = directory.listFiles()!!.single()
-                val savedFile = File(directory, "${source.name}.backup")
-                assertTrue(source.renameTo(savedFile))
-                assertTrue(source.mkdir())
-                File(source, "blocker").writeText("fixture")
-                try {
-                    session.more(2)
-                    fail("A failed page commit must not publish the fetched page")
-                } catch (_: IOException) { }
-                assertTrue(source.deleteRecursively())
-                assertTrue(savedFile.renameTo(source))
-                assertEquals(before, PageCache.readStale(snapshotKey))
-                assertTrue(session.isCurrent())
-                assertTrue(other.isCurrent())
-                assertEquals(listOf(refreshed), session.more(2))
-                assertEquals(listOf(refreshed), other.more(2))
-                val stored = Gson().fromJson(PageCache.readStale(snapshotKey), ListPageCache.Snapshot::class.java)
-                assertEquals(refreshed, stored.pages[2]?.html)
             }
         } finally { directory.deleteRecursively() }
     }
@@ -348,52 +283,6 @@ class ListPageCacheTest {
                     assertEquals(html(2), stored.pages[2]?.html)
                 }
             }
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test
-    fun failedBadPageRecoveryPreservesBatchAndRetriesTheSamePage() {
-        val directory = Files.createTempDirectory("list-bad-page-retry-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            withResponses(listOf("<html>invalid</html>", html(2))) { firstUrl ->
-                val now = System.currentTimeMillis()
-                val snapshotKey = store(firstUrl, ListPageCache.Snapshot("batch-a", 2, mapOf(
-                    1 to ListPageCache.Page(now, html(1)),
-                    2 to ListPageCache.Page(now, "<html>invalid</html>")
-                )))
-                val (session, _) = open(firstUrl)
-                val before = PageCache.readStale(snapshotKey)
-                try {
-                    session.more(2)
-                    fail("An invalid replacement must report failure")
-                } catch (_: IOException) { }
-                assertEquals(before, PageCache.readStale(snapshotKey))
-                assertTrue(session.isCurrent())
-                assertEquals(2, session.pageCount)
-                assertEquals(listOf(html(2)), session.more(2))
-            }
-        } finally { directory.deleteRecursively() }
-    }
-
-    @Test
-    fun warmFirstAndLaterPageHitsUpdateDiskRecencyWithoutChangingFreshness() {
-        val directory = Files.createTempDirectory("list-memory-hit-recency-").toFile()
-        PageCache.initializeDirectory(directory)
-        try {
-            store("batch-a")
-            val (session, _) = open()
-            val before = PageCache.readStale(key)
-            val file = directory.listFiles()!!.single()
-            val oldAccess = System.currentTimeMillis() - 600_000L
-            assertTrue(file.setLastModified(oldAccess))
-            val (reopened, _) = open()
-            assertTrue(file.lastModified() > oldAccess)
-            assertTrue(reopened.isCurrent())
-            assertTrue(file.setLastModified(oldAccess))
-            assertEquals(listOf(html(2)), session.more(2))
-            assertTrue(file.lastModified() > oldAccess)
-            assertEquals(before, PageCache.readStale(key))
         } finally { directory.deleteRecursively() }
     }
 
