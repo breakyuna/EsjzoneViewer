@@ -141,12 +141,13 @@ class StructuredDownloadStoreTest {
     }
 
     @Test
-    fun blankImagePlaceholdersRemainReadableWithoutRewritingSnapshots() = withStorage { root ->
+    fun legacyBlankImagePlaceholdersRemainReadableDuringMigration() = withStorage { root ->
         val order = listOf(chapter(1), chapter(2))
-        val manifests = order.indices.map { save(it + 1, order) }
+        save(1, order)
+        val manifest = save(2, order)
         val directory = root.listFiles()!!.single()
         order.forEachIndexed { index, item ->
-            val record = manifests.last().chapters[index]
+            val record = manifest.chapters[index]
             val legacy = DownloadedChapterContent(item.name, item.url,
                 listOf(DownloadedComponent("image", "")),
                 if (index == 0) "<p><img/></p>" else null, item.url)
@@ -156,11 +157,19 @@ class StructuredDownloadStoreTest {
             assertTrue(restored.body!!.readerBlocks().joinToString("") { it.sourceText() }.isNotBlank())
             assertEquals(restored.body.fingerprint, NovelDownloadStore.readChapter(item.url)!!.body!!.fingerprint)
         }
+    }
+
+    @Test
+    fun blankImagePlaceholdersRemainReadableWithoutChangingStructuredBody() = withStorage { root ->
+        val target = chapter(1)
+        val manifest = save(1, listOf(target))
+        val directory = root.listFiles()!!.single()
+        val file = File(directory, manifest.chapters.single().fileName)
         val body = ChapterBody.from(listOf(com.breakyuna.esjzone.novellibrary.component.ImageComponent("")))
-        File(directory, manifests.last().chapters.first().fileName).writeText(Gson().toJson(
-            DownloadedChapterContent("Chapter 1", chapter(1).url, listOf(DownloadedComponent("image", "")),
+        file.writeText(Gson().toJson(
+            DownloadedChapterContent(target.name, target.url, listOf(DownloadedComponent("image", "")),
                 schemaVersion = 2, body = body)))
-        val snapshot = requireNotNull(NovelDownloadStore.readChapter(chapter(1).url))
+        val snapshot = requireNotNull(NovelDownloadStore.readChapter(target.url))
         assertTrue(snapshot.content.single() is TextComponent)
         assertEquals(body, snapshot.body)
     }
