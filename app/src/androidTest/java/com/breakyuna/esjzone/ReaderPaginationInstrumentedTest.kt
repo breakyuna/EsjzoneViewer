@@ -4,6 +4,7 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -103,6 +104,35 @@ class ReaderPaginationInstrumentedTest {
                 assertTrue("Rendered page height $renderedHeight exceeds $height", renderedHeight <= height)
             }
         }
+    }
+
+    @Test
+    fun softContinuationKeepsFirstLineIndentAfterTheNextHardBreak() {
+        val density = Density(1f)
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
+            density, LayoutDirection.Ltr)
+        val indent = TextIndent(firstLine = 36.sp)
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, textIndent = indent)
+        val first = "甲".repeat(24)
+        val source = "$first\n下一行\n另一行"
+        val settings = ReaderSettings(firstLineIndentChars = 2, paragraphSpacingDp = 0f)
+        val width = 180
+        val pages = paginateReaderChapter(
+            "标题", listOf(ReaderBlock.Text(source)), settings, style, style.copy(textIndent = TextIndent.None),
+            measurer, density, width, 90, { it }
+        )
+        val fragments = pages.flatMap { it.segments }.filterIsInstance<ReaderPageSegment.TextLine>()
+        assertEquals(source, fragments.joinToString("") { it.text.text })
+        val continuation = fragments.first { it.startOffset in 1 until first.length }
+        val next = fragments.first { it.startOffset == first.length + 1 }
+        assertEquals(TextIndent.None, continuation.paragraphStyle?.textIndent)
+        assertEquals(first.length + 1, continuation.startOffset + continuation.text.length)
+        assertEquals(indent, next.paragraphStyle?.textIndent)
+        assertTrue(pages.any { continuation in it.segments && next in it.segments })
+        val continuedLayout = measurer.measure(continuation.text, requireNotNull(continuation.paragraphStyle),
+            maxLines = continuation.maxLines, constraints = Constraints(maxWidth = width))
+        assertTrue(continuedLayout.getLineStart(continuedLayout.lineCount - 1) < continuation.text.length)
     }
 
     @Test

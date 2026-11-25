@@ -27,6 +27,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
@@ -56,7 +57,8 @@ internal sealed interface ReaderPageSegment {
         val startOffset: Int = 0,
         val sourceSignature: String = signature,
         val alignment: String? = null,
-        val paragraphStyle: TextStyle? = null
+        val paragraphStyle: TextStyle? = null,
+        val maxLines: Int = Int.MAX_VALUE
     ) : ReaderPageSegment
     data class Image(val url: String) : ReaderPageSegment
     data class Gap(val height: Dp) : ReaderPageSegment
@@ -124,12 +126,24 @@ internal fun paginateReaderChapter(
         )
         val signature = ReaderUnderlines.signature(blocks[blockIndex], text.text)
         val sourceSignature = ReaderUnderlines.sourceSignature(blocks[blockIndex])
+        val usesBlockIndent = layoutStyle.textIndent?.let { it != TextIndent.None } == true &&
+            text.paragraphStyles.isEmpty()
+        var nextHardBreak = if (usesBlockIndent) text.text.indexOf('\n') else -1
         var startLine = 0
         while (startLine < layout.lineCount) {
             checkCancelled()
             if (current.isNotEmpty() && usedHeight >= heightPx) flush()
+            val start = layout.getLineStart(startLine)
+            val softContinuation = start > 0 && text.text[start - 1] != '\n'
+            val fragmentStyle = if (softContinuation) layoutStyle.copy(textIndent = TextIndent.None) else layoutStyle
+            // A soft-wrapped continuation shares the same Text node only until the next hard break.
+            // The rest of the page can then use the ordinary first-line indent again.
+            if (nextHardBreak in 0 until start) nextHardBreak = text.text.indexOf('\n', start)
+            val endLimit = if (softContinuation && nextHardBreak in start until text.text.lastIndex) {
+                layout.getLineForOffset(nextHardBreak) + 1
+            } else layout.lineCount
             var endLine = startLine
-            while (endLine < layout.lineCount) {
+            while (endLine < endLimit) {
                 checkCancelled()
                 val nextHeight = layout.getLineBottom(endLine).toInt() - layout.getLineTop(startLine).toInt()
                 if (current.isNotEmpty() && usedHeight + nextHeight > heightPx) break
@@ -141,20 +155,26 @@ internal fun paginateReaderChapter(
                 flush()
                 continue
             }
-            val start = layout.getLineStart(startLine)
             // A substring is a new paragraph to Text: first/last-line metrics and
             // trailing newlines can differ from the original paragraph's line box.
             // Measure exactly what we render before committing it to this page.
             var segmentText: AnnotatedString
+            var maxLines: Int
             var lineHeight: Int
             while (true) {
                 checkCancelled()
                 segmentText = text.subSequence(start, layout.getLineEnd(endLine - 1))
-                lineHeight = textMeasurer.measure(
-                    text = segmentText,
-                    style = if (start == 0) layoutStyle else layoutStyle.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None),
-                    placeholders = placeholders(segmentText, inline),
-                    constraints = Constraints(maxWidth = widthPx)
+                val ranges = placeholders(segmentText, inline)
+                val constraints = Constraints(maxWidth = widthPx)
+                val fragment = textMeasurer.measure(
+                    segmentText, fragmentStyle, placeholders = ranges, constraints = constraints
+                )
+                val lastLine = fragment.lineCount - 1
+                // Keep the newline in the source slice and omit the empty layout line created by cutting there.
+                maxLines = if (endLine == endLimit && endLimit < layout.lineCount && lastLine > 0 &&
+                    fragment.getLineStart(lastLine) == segmentText.length) lastLine else Int.MAX_VALUE
+                lineHeight = if (maxLines == Int.MAX_VALUE) fragment.size.height else textMeasurer.measure(
+                    segmentText, fragmentStyle, maxLines = maxLines, placeholders = ranges, constraints = constraints
                 ).size.height
                 if (usedHeight + lineHeight <= heightPx) break
                 if (endLine == startLine + 1) break
@@ -169,7 +189,7 @@ internal fun paginateReaderChapter(
                 paragraphSpacing
             } else 0.dp
             add(ReaderPageSegment.TextLine(segmentText, inline, gap, blockIndex, signature, start,
-                sourceSignature, alignment, layoutStyle),
+                sourceSignature, alignment, fragmentStyle, maxLines),
                 lineHeight + with(density) { gap.roundToPx() }, blockIndex + start.toFloat() / text.length)
             startLine = endLine
             if (last && gap == 0.dp && paragraphGap > 0) flush()
@@ -255,9 +275,8 @@ internal fun ReaderPageContent(
                     is ReaderPageSegment.TextLine -> ReaderUnderlineText(
                         text = segment.text,
                         inlineContent = segment.inlineContent,
-                        style = (segment.paragraphStyle ?: readerParagraphStyle(textStyle, segment.alignment)).let { style ->
-                            if (segment.startOffset == 0) style else style.copy(textIndent = androidx.compose.ui.text.style.TextIndent.None)
-                        },
+                        style = segment.paragraphStyle ?: readerParagraphStyle(textStyle, segment.alignment),
+                        maxLines = segment.maxLines,
                         color = contentColor,
                         modifier = (if (segment.alignment != null) Modifier.fillMaxWidth() else Modifier)
                             .padding(bottom = segment.bottomSpacing),
