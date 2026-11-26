@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.magnifier
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,11 +43,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+
+private data class UnderlineMenu(val mark: ReaderUnderline, val point: Offset, val linkUrl: String?)
 
 /** Long press anchors one character; dragging selects through the character under the finger. */
 @Composable
@@ -80,7 +84,7 @@ internal fun ReaderUnderlineText(
     val sharedSelection = LocalReaderUnderlineSelection.current
     val selection = sharedSelection ?: remember { ReaderUnderlineSelection() }
     val chapter = LocalReaderUnderlineChapter.current
-    var menu by remember(text, enabled) { mutableStateOf<Pair<ReaderUnderline, Offset>?>(null) }
+    var menu by remember(text, enabled) { mutableStateOf<UnderlineMenu?>(null) }
     val currentSave by rememberUpdatedState(onUnderline)
     val currentLayout by rememberUpdatedState(onLayout)
     // Only a mapping of exactly this displayed text may translate original offsets.
@@ -159,6 +163,7 @@ internal fun ReaderUnderlineText(
     val linked = remember(displayed, links, linkOffsets, offset, linkListener, bookmarkPicking) {
         addReaderLinks(displayed, if (bookmarkPicking) emptyList() else links, linkOffsets, offset, linkListener)
     }
+    val currentLinked by rememberUpdatedState(linked)
     val (glowText, glowStyle) = readerGlowTextAppearance(linked, style)
     Text(text = glowText, inlineContent = inlineContent, style = glowStyle, color = color,
         maxLines = maxLines, overflow = TextOverflow.Visible,
@@ -239,12 +244,17 @@ internal fun ReaderUnderlineText(
                 val character = readerUnderlineCharacterAt(result, down.position)
                 val bounds = result.getBoundingBox(character.min)
                 val mark = currentMarks.firstOrNull { (_, range) -> offset + character.min in range }?.first
-                val up = waitForUpOrCancellation()
-                if (mark != null && bounds.inflate(4.dp.toPx()).contains(down.position) && up != null &&
+                    ?: return@awaitEachGesture
+                if (!bounds.inflate(4.dp.toPx()).contains(down.position)) return@awaitEachGesture
+                val linkUrl = currentLinked.getLinkAnnotations(character.min, character.max)
+                    .firstNotNullOfOrNull { (it.item as? LinkAnnotation.Url)?.url }
+                // A confirmed tap on the overlap must reach the menu before the link consumes it.
+                val up = waitForUpOrCancellation(if (linkUrl == null) PointerEventPass.Main else PointerEventPass.Initial)
+                if (up != null &&
                     (up.position - down.position).getDistance() < viewConfiguration.touchSlop &&
                     up.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
                     up.consume()
-                    menu = mark to bounds.center
+                    menu = UnderlineMenu(mark, bounds.center, linkUrl)
                 }
             }
         }).then(if (!enabled || bookmarkPicking) Modifier else Modifier.pointerInput(segment, selection) {
@@ -268,7 +278,7 @@ internal fun ReaderUnderlineText(
                 selection.cancel()
             }
         }))
-    menu?.let { (mark, point) ->
+    menu?.let { (mark, point, linkUrl) ->
         val popupSpacing = with(LocalDensity.current) { 24.dp.toPx() }
         Popup(
             popupPositionProvider = remember(segment, point, popupSpacing) {
@@ -288,8 +298,15 @@ internal fun ReaderUnderlineText(
             properties = PopupProperties(focusable = true)
         ) {
             Surface(shape = RoundedCornerShape(12.dp), shadowElevation = 6.dp) {
-                TextButton(onClick = { currentSave(mark, true); menu = null }) {
-                    Text(globalStringResource(R.string.reader_remove_underline))
+                Row {
+                    TextButton(onClick = { currentSave(mark, true); menu = null }) {
+                        Text(globalStringResource(R.string.reader_remove_underline))
+                    }
+                    if (linkUrl != null) {
+                        TextButton(onClick = { menu = null; currentLinkClick(linkUrl) }) {
+                            Text(globalStringResource(R.string.reader_visit_link))
+                        }
+                    }
                 }
             }
         }

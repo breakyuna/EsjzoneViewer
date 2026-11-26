@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone
 
+import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
@@ -25,6 +26,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.database.GeneralDatabase
+import com.breakyuna.esjzone.domain.reader.ReaderLink
+import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.page.ReaderUnderlinesModel
@@ -138,5 +141,63 @@ class ReaderUnderlineInstrumentedTest {
         composeRule.runOnIdle { assertTrue(marks.isEmpty()); assertEquals(0, taps) }
         node.performTouchInput { click(layouts.single().getBoundingBox(1).center) }
         composeRule.runOnIdle { assertEquals(1, taps) }
+    }
+
+    @Test fun tappingOnlyTheMarkedPartOfALinkOffersBothActions() {
+        val text = "甲乙丙丁戊己"
+        val prefix = "上一页"
+        val offset = prefix.length
+        val offsets = ReaderTextOffsets.identity(prefix + text)
+        val signature = "a".repeat(64)
+        val mark = ReaderUnderline(0, signature, offset, offset + 3)
+        val url = "https://example.com/reference"
+        val links = listOf(ReaderLink(offset + 1, offset + 5, url))
+        var marks by mutableStateOf(listOf(mark))
+        val opened = mutableListOf<String>()
+        var taps = 0
+        composeRule.setContent {
+            MaterialTheme {
+                ReaderShell(background = Color.White, onReadingAreaTap = { _, _ -> taps++ }) {
+                    ReaderUnderlineText(AnnotatedString(text), emptyMap(), TextStyle(fontSize = 22.sp),
+                        Color.Black, Modifier.testTag("linked-text"), false, 0, signature, offset = offset,
+                        underlines = marks, onUnderline = { selected, remove ->
+                            marks = ReaderUnderlines.update(marks, selected, remove)
+                        }, links = links, linkOffsets = offsets, onLinkClick = { opened.add(it) })
+                }
+            }
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val popupAction = hasClickAction() and hasAnyAncestor(isPopup())
+        val linkAction = popupAction and hasText(context.getString(R.string.reader_visit_link))
+        val removeAction = popupAction and hasText(context.getString(R.string.reader_remove_underline))
+        val node = composeRule.onNodeWithTag("linked-text")
+        val layouts = mutableListOf<TextLayoutResult>()
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+
+        node.performTouchInput { click(layout.getBoundingBox(3).center) }
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
+        composeRule.runOnIdle { assertEquals(listOf(url), opened) }
+
+        val overlap = layout.getBoundingBox(1).center
+        node.performTouchInput { click(overlap) }
+        composeRule.onAllNodes(popupAction).assertCountEquals(2)
+        composeRule.runOnIdle { assertEquals(listOf(url), opened) }
+        composeRule.onNode(linkAction).performClick()
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
+        composeRule.runOnIdle {
+            assertEquals(listOf(url, url), opened)
+            assertEquals(listOf(mark), marks)
+        }
+
+        node.performTouchInput { click(overlap) }
+        composeRule.onNode(removeAction).performClick()
+        composeRule.onAllNodes(isPopup()).assertCountEquals(0)
+        composeRule.runOnIdle {
+            assertEquals(listOf(url, url), opened)
+            assertTrue(marks.isEmpty())
+            assertEquals(0, taps)
+        }
     }
 }
