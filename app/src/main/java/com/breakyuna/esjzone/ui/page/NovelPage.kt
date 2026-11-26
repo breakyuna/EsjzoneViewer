@@ -11,6 +11,8 @@ import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import android.annotation.SuppressLint
 import android.content.Context
+import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import android.content.Intent
 import android.net.Uri
@@ -143,6 +145,8 @@ import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.database.BookshelfRepository
+import com.breakyuna.esjzone.database.BookmarkCoverStore
+import com.breakyuna.esjzone.database.entity.BookshelfEntry
 import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.database.entity.BookshelfSyncState
 import com.breakyuna.esjzone.network.Authorization
@@ -167,6 +171,7 @@ import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelExporter
 import com.breakyuna.esjzone.storage.StorageMigrationBusyException
+import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.ui.component.AppSectionTitle
 import com.breakyuna.esjzone.ui.component.Description
 import com.breakyuna.esjzone.ui.component.SelectableProse
@@ -306,8 +311,10 @@ class NovelPage(
                 return
             }
             val selected = exportSelection
+            val shelfEntry = localShelfEntry
+            val previewCoverUrl = detailPreviewCoverUrl(novel, sourceCover)
             NovelExport.start(uri, "${detailed.name} as ${format.name}") { output, checkActive ->
-                writeNovelExport(detailed, output, format, selected, checkActive)
+                writeNovelExport(detailed, output, format, selected, shelfEntry, previewCoverUrl, checkActive)
             }
         }
 
@@ -1114,8 +1121,7 @@ private fun RebuiltNovelHero(
     val carouselTarget = LocalHomeCarouselTransformTarget.current
     val previewCover = preview as? CoveredNovel
     val transitionActive = LocalContainerTransformScope.current?.isTransitionActive == true
-    val previewCoverUrl = EsjzoneUrls.coverOrEmpty(sourceCover?.coverUrl)
-        .ifBlank { EsjzoneUrls.coverOrEmpty(previewCover?.coverUrl) }
+    val previewCoverUrl = detailPreviewCoverUrl(preview, sourceCover)
     var entryCoverReleased by rememberSaveable(preview.url) { mutableStateOf(false) }
     LaunchedEffect(detailed != null, transitionActive) {
         if (detailed != null && !transitionActive) entryCoverReleased = true
@@ -1421,12 +1427,18 @@ private enum class NovelExportFormat {
     EPUB
 }
 
+private fun detailPreviewCoverUrl(preview: Novel, sourceCover: SharedCoverOrigin?): String =
+    EsjzoneUrls.coverOrEmpty(sourceCover?.coverUrl)
+        .ifBlank { EsjzoneUrls.coverOrEmpty((preview as? CoveredNovel)?.coverUrl) }
+
 /** Runs on the export controller's IO dispatcher; [checkActive] aborts on cancellation. */
 private fun writeNovelExport(
     novel: DetailedNovel,
     stream: OutputStream,
     format: NovelExportFormat,
     selectedChapterUrls: Set<String>,
+    shelfEntry: BookshelfEntry?,
+    previewCoverUrl: String,
     checkActive: () -> Unit
 ) {
     val manifest = PresentationAccess.downloads.manifest(novel.url)
@@ -1448,7 +1460,25 @@ private fun writeNovelExport(
                 checkActive()
                 PresentationAccess.downloads.imageFile(novel.url, component)
             },
-            selectedChapterUrls = selectedChapterUrls
+            selectedChapterUrls = selectedChapterUrls,
+            coverFiles = sequence {
+                checkActive()
+                val coverUrls = listOf(novel.coverUrl, manifest.coverUrl, previewCoverUrl)
+                    .map(EsjzoneUrls::coverOrEmpty).filter(String::isNotBlank).distinct()
+                for (url in coverUrls) {
+                    BookmarkCoverStore.findCoilCachedCover(url)?.let { yield(StorageFile(it)) }
+                }
+                val downloadedCover = try {
+                    PresentationAccess.downloads.findDownloadedCover(novel.url)
+                } catch (_: IOException) {
+                    null
+                }
+                downloadedCover?.let { yield(it) }
+                val shelfCover = shelfEntry?.let(BookshelfCoverStore::localOrRemote)?.let(Uri::parse)
+                if (shelfCover?.scheme == "file") {
+                    shelfCover.path?.let { yield(StorageFile(File(it))) }
+                }
+            }
         )
     }
 }

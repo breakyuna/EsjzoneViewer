@@ -14,6 +14,8 @@ import com.breakyuna.esjzone.storage.StorageFile
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import org.jsoup.Jsoup
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,15 +45,23 @@ class NovelExporterTest {
         ))
         val snapshot = chapter(record).copy(schemaVersion = 2, body = body,
             components = listOf(DownloadedComponent("text", "旧简化文本")),
-            contentHtml = "<p>结构化正文<a href='https://example.com/reference'>引用</a></p><table><tr><td>表格</td></tr></table>")
+            contentHtml = """
+                <p>结构化正文<a href="https://example.com/reference">引用</a></p>
+                <table><tr><td>表格</td></tr></table>
+                <ol type="A" start="2"><li>正文中的 B 项</li></ol>
+            """.trimIndent())
         val txt = ByteArrayOutputStream()
         NovelExporter.exportTxt(manifest(), { snapshot }, txt)
         assertTrue(txt.toString("UTF-8").contains("结构化正文"))
         assertTrue(!txt.toString("UTF-8").contains("旧简化文本"))
         val epub = ByteArrayOutputStream()
         NovelExporter.exportEpub(manifest(), { snapshot }, epub)
-        assertTrue(epubChapter(epub).contains("https://example.com/reference"))
-        assertTrue(epubChapter(epub).contains("<table>"))
+        val xhtml = epubChapter(epub)
+        assertTrue(xhtml.contains("https://example.com/reference"))
+        assertTrue(xhtml.contains("<table>"))
+        val orderedList = requireNotNull(Jsoup.parse(xhtml).selectFirst("ol"))
+        assertEquals("A", orderedList.attr("type"))
+        assertEquals("2", orderedList.attr("start"))
     }
 
     @Test
@@ -187,17 +197,120 @@ class NovelExporterTest {
         assertTrue(entries.containsKey("META-INF/container.xml"))
         assertTrue(entries.containsKey("OEBPS/content.opf"))
         assertTrue(entries.containsKey("OEBPS/nav.xhtml"))
+        assertEquals(listOf("OEBPS/images.css"), order.filter { it.endsWith(".css") })
+        assertEquals("img { max-width: 100%; height: auto; }", entries.getValue("OEBPS/images.css").second)
+        assertTrue(entries.getValue("OEBPS/content.opf").second.contains("href=\"images.css\" media-type=\"text/css\""))
+        entries.filterKeys { it.endsWith(".xhtml") }.values.forEach { (_, document) ->
+            assertTrue(!document.contains("<style") && !document.contains("style="))
+        }
         val chapterXhtml = entries.getValue("OEBPS/chapter-1.xhtml").second
+        assertTrue(chapterXhtml.contains("rel=\"stylesheet\" href=\"images.css\""))
         assertTrue(chapterXhtml.contains("章节正文"))
         assertTrue(chapterXhtml.contains("<strong>"))
         assertTrue(chapterXhtml.contains("<ruby>"))
         assertTrue(chapterXhtml.contains("<img"))
+        assertTrue(!chapterXhtml.contains("align=") && !chapterXhtml.contains("width=") &&
+            !chapterXhtml.contains("height="))
         assertTrue(entries.containsKey("OEBPS/images/image-1.png"))
     }
 
     @Test
     fun suggestedFileName_replacesCharactersRejectedByDocumentProviders() {
         assertEquals("书_名_.epub", NovelExporter.suggestedFileName("书/名?", "EPUB"))
+    }
+
+    @Test
+    fun epubKeepsParagraphsAndRemovesSourceIndentAcrossStyledRuns() {
+        val output = ByteArrayOutputStream()
+        NovelExporter.exportEpub(
+            manifest(),
+            { record -> chapter(record).copy(contentHtml = """
+                <div>　首段　行内<br><span>&nbsp;　续行</span><br><strong>　　新段</strong><br><br>　末段</div>
+                <p><strong>　段首</strong>　段内<br>　硬换行<br><em>　</em><strong>　另一段</strong></p>
+            """.trimIndent()) },
+            output
+        )
+
+        val xhtml = epubChapter(output).replace(Regex("<br\\s*/>"), "<br/>")
+        assertTrue(xhtml.contains("<p>首段　行内<br/><span>续行</span></p>"))
+        assertTrue(xhtml.contains("<p><strong>新段</strong></p>"))
+        assertTrue(xhtml.contains("<p><br/></p><p>末段</p>"))
+        assertTrue(xhtml.contains("<strong>段首</strong>　段内<br/>硬换行</p>"))
+        assertTrue(xhtml.contains("<p><em></em><strong>另一段</strong></p>"))
+    }
+
+    @Test
+    fun epubSplitsParagraphsAtNestedBreaksAndKeepsInlineFormatting() {
+        val output = ByteArrayOutputStream()
+        val url = "https://example.com/reference"
+        NovelExporter.exportEpub(manifest(), { record ->
+            chapter(record).copy(contentHtml = """
+                <p><a href="$url"><strong>首段<br><em>　　次段<br> <br>末段</em></strong></a></p>
+                <p><strong>同段<br>　续行</strong></p>
+            """.trimIndent())
+        }, output)
+
+        val xhtml = epubChapter(output).replace(Regex("<br\\s*/>"), "<br/>")
+        assertTrue(xhtml.contains("""<p><a href="$url"><strong>首段</strong></a></p>"""))
+        assertTrue(xhtml.contains("""<p><a href="$url"><strong><em>次段</em></strong></a></p>"""))
+        assertTrue(xhtml.contains("""<p><br/></p><p><a href="$url"><strong><em>末段</em></strong></a></p>"""))
+        assertTrue(xhtml.contains("<p><strong>同段<br/>续行</strong></p>"))
+    }
+
+    @Test
+    fun epubClearsSourceIndentInLegacyChapters() {
+        val output = ByteArrayOutputStream()
+        NovelExporter.exportEpub(manifest(), { record ->
+            chapter(record).copy(contentHtml = null, components = listOf(
+                DownloadedComponent("text", "　开头\r\n\u00a0续行　保留")
+            ))
+        }, output)
+
+        assertTrue(epubChapter(output).contains("<p>开头<br/>续行　保留</p>"))
+        val cover = epubEntry(output, "OEBPS/cover.xhtml").toString(StandardCharsets.UTF_8)
+        assertTrue(cover.contains("<h1>测试小说</h1>"))
+    }
+
+    @Test
+    fun epubEmbedsCachedCoverWithItsActualMediaTypeAndFirstSpineEntry() {
+        val output = ByteArrayOutputStream()
+        val cover = File.createTempFile("novel-cover", ".img")
+        try {
+            cover.writeBytes(SAMPLE_PNG)
+            NovelExporter.exportEpub(manifest(), ::chapter, output, coverFiles = sequenceOf(StorageFile(cover)))
+
+            assertArrayEquals(SAMPLE_PNG, epubEntry(output, "OEBPS/images/cover.png"))
+            val opf = epubEntry(output, "OEBPS/content.opf").toString(StandardCharsets.UTF_8)
+            assertTrue(opf.contains("href=\"images/cover.png\" media-type=\"image/png\" properties=\"cover-image\""))
+            assertTrue(opf.substringAfter("<spine>").trimStart().startsWith("<itemref idref=\"cover-page\"/>"))
+            val page = epubEntry(output, "OEBPS/cover.xhtml").toString(StandardCharsets.UTF_8)
+            assertTrue(page.contains("<img src=\"images/cover.png\" alt=\"测试小说\"/>"))
+            assertTrue(page.contains("rel=\"stylesheet\" href=\"images.css\""))
+        } finally {
+            cover.delete()
+        }
+    }
+
+    @Test
+    fun epubSkipsUnreadableAndUnsupportedCoversBeforeWritingZipEntry() {
+        val output = ByteArrayOutputStream()
+        val missing = File(System.getProperty("java.io.tmpdir"), "missing-cover-${System.nanoTime()}.img")
+        val invalid = File.createTempFile("invalid-cover", ".img")
+        val valid = File.createTempFile("valid-cover", ".img")
+        try {
+            invalid.writeText("not an image")
+            valid.writeBytes(SAMPLE_PNG)
+            NovelExporter.exportEpub(
+                manifest(),
+                ::chapter,
+                output,
+                coverFiles = sequenceOf(StorageFile(missing), StorageFile(invalid), StorageFile(valid))
+            )
+            assertArrayEquals(SAMPLE_PNG, epubEntry(output, "OEBPS/images/cover.png"))
+        } finally {
+            invalid.delete()
+            valid.delete()
+        }
     }
 
     @Test
@@ -237,15 +350,18 @@ class NovelExporterTest {
     }
 
     private fun epubChapter(output: ByteArrayOutputStream): String =
+        epubEntry(output, "OEBPS/chapter-1.xhtml").toString(StandardCharsets.UTF_8)
+
+    private fun epubEntry(output: ByteArrayOutputStream, name: String): ByteArray =
         ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { zip ->
             var entry = zip.nextEntry
             while (entry != null) {
-                if (entry.name == "OEBPS/chapter-1.xhtml") {
-                    return@use zip.readBytes().toString(StandardCharsets.UTF_8)
+                if (entry.name == name) {
+                    return@use zip.readBytes()
                 }
                 entry = zip.nextEntry
             }
-            error("Exported chapter missing")
+            error("Missing EPUB entry $name")
         }
 
     private fun manifest() = DownloadedNovelManifest(
@@ -290,8 +406,23 @@ class NovelExporterTest {
         ),
         contentHtml = """
             <p><strong>章节正文</strong><br><ruby>漢<rt>かん</rt></ruby></p>
-            <p><img data-src="https://example.com/illustration.jpg"></p>
+            <p><img data-src="https://example.com/illustration.jpg" align="right" width="300" height="200"></p>
         """.trimIndent(),
         baseUrl = "https://www.esjzone.cc/forum/1/1.html"
     )
+
+    companion object {
+        // Minimal 1x1 transparent PNG.
+        private val SAMPLE_PNG = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4.toByte(),
+            0x89.toByte(), 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+            0x54, 0x78, 0x9c.toByte(), 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4.toByte(), 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae.toByte(),
+            0x42, 0x60, 0x82.toByte()
+        )
+    }
 }

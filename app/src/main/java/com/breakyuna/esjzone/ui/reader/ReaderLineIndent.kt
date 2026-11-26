@@ -6,6 +6,10 @@ import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 internal class ReaderLineIndent {
     private var atLineStart = true
 
+    fun startLine() {
+        atLineStart = true
+    }
+
     fun retainedRanges(text: String): List<IntRange>? {
         var ranges: MutableList<IntRange>? = null
         var retainedStart = 0

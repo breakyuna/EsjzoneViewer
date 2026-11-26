@@ -1,6 +1,8 @@
 package com.breakyuna.esjzone.offline
 
 import com.breakyuna.esjzone.storage.StorageFile
+import com.breakyuna.esjzone.ui.reader.ReaderLineIndent
+import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
@@ -12,7 +14,9 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import org.jsoup.nodes.Entities
+import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.jsoup.safety.Cleaner
 import org.jsoup.safety.Safelist
@@ -64,7 +68,8 @@ object NovelExporter {
         chapterLoader: (DownloadedChapterRecord) -> DownloadedChapterContent?,
         output: OutputStream,
         imageLoader: (DownloadedComponent) -> StorageFile? = { null },
-        selectedChapterUrls: Set<String>? = null
+        selectedChapterUrls: Set<String>? = null,
+        coverFiles: Sequence<StorageFile> = emptySequence()
     ) {
         val records = chaptersForExport(manifest, selectedChapterUrls)
         val chapterTitles = ArrayList<String>(records.size)
@@ -72,6 +77,9 @@ object NovelExporter {
         ZipOutputStream(output.buffered()).use { zip ->
             addStoredEntry(zip, "mimetype", "application/epub+zip")
             addTextEntry(zip, "META-INF/container.xml", containerXml())
+            addTextEntry(zip, "OEBPS/images.css", "img { max-width: 100%; height: auto; }")
+            val coverHref = writeCoverImage(zip, coverFiles)
+            addTextEntry(zip, "OEBPS/cover.xhtml", coverXhtml(manifest, coverHref))
             records.forEachIndexed { index, record ->
                 val chapter = chapterLoader(record)
                     ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
@@ -105,7 +113,7 @@ object NovelExporter {
                     chapterXhtml(chapter, chapterNumber, components, chapterImages, images)
                 )
             }
-            addTextEntry(zip, "OEBPS/content.opf", contentOpf(manifest, chapterTitles.size, images.values))
+            addTextEntry(zip, "OEBPS/content.opf", contentOpf(manifest, chapterTitles.size, images.values, coverHref))
             addTextEntry(zip, "OEBPS/nav.xhtml", navigationXhtml(manifest, chapterTitles))
             images.values.forEach { image ->
                 addBinaryEntry(zip, "OEBPS/${image.href}", image.file)
@@ -152,7 +160,8 @@ object NovelExporter {
     private fun contentOpf(
         manifest: DownloadedNovelManifest,
         chapterCount: Int,
-        images: Collection<EpubImage>
+        images: Collection<EpubImage>,
+        coverHref: String?
     ): String {
         val modified = Instant.ofEpochMilli(manifest.downloadedAt.coerceAtLeast(0L))
             .truncatedTo(ChronoUnit.SECONDS)
@@ -166,6 +175,9 @@ object NovelExporter {
         val imageManifest = images.mapIndexed { index, image ->
             "    <item id=\"image-${index + 1}\" href=\"${xml(image.href)}\" media-type=\"${xml(image.mediaType)}\"/>"
         }.joinToString("\n")
+        val coverItem = coverHref?.let { href ->
+            "<item id=\"cover-image\" href=\"$href\" media-type=\"${mediaTypeFor(href.substringAfterLast('.'))}\" properties=\"cover-image\"/>"
+        }.orEmpty()
         return """<?xml version="1.0" encoding="UTF-8"?>
             <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id" xml:lang="zh-CN">
               <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -177,13 +189,34 @@ object NovelExporter {
               </metadata>
               <manifest>
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                <item id="image-css" href="images.css" media-type="text/css"/>
+                <item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>
+                $coverItem
             $chapterManifest
             $imageManifest
               </manifest>
               <spine>
+                <itemref idref="cover-page"/>
             $spine
               </spine>
             </package>
+        """.trimIndent()
+    }
+
+    private fun coverXhtml(manifest: DownloadedNovelManifest, coverHref: String?): String {
+        val title = xml(manifest.name)
+        val content = if (coverHref == null) {
+            val author = manifest.author.takeIf(String::isNotBlank)?.let { "<p>${xml(it)}</p>" }.orEmpty()
+            "<h1>$title</h1>$author"
+        } else {
+            "<img src=\"$coverHref\" alt=\"$title\"/>"
+        }
+        return """<?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE html>
+            <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="zh-CN" xml:lang="zh-CN">
+              <head><title>$title</title><link rel="stylesheet" href="images.css"/></head>
+              <body epub:type="cover">$content</body>
+            </html>
         """.trimIndent()
     }
 
@@ -220,10 +253,15 @@ object NovelExporter {
         val body = richChapterHtml(chapter, chapterImages, images) ?: components.joinToString("\n") { component ->
             when (component.type) {
                 "image" -> images[component.imageKey()]?.let { image ->
-                    "    <div class=\"image\"><img src=\"${xml(image.href)}\" alt=\"插图\"/></div>"
-                } ?: "    <p class=\"image\">[图片：${xml(component.value)}]</p>"
+                    "    <div><img src=\"${xml(image.href)}\" alt=\"插图\"/></div>"
+                } ?: "    <p>[图片：${xml(component.value)}]</p>"
                 "break" -> "    <p><br/></p>"
-                else -> "    <p>${xml(component.value).replace("\n", "<br/>")}</p>"
+                else -> {
+                    val text = ReaderLineIndent().trim(component.value)
+                        .replace("\r\n", "\n").replace('\r', '\n').replace('\u2028', '\n').replace('\u2029', '\n')
+                    val content = if (text.isEmpty()) "<br/>" else xml(text).replace("\n", "<br/>")
+                    "    <p>$content</p>"
+                }
             }
         }
         val title = chapter.name.ifBlank { "第 $index 章" }
@@ -233,7 +271,7 @@ object NovelExporter {
               <head>
                 <title>${xml(title)}</title>
                 <meta charset="UTF-8"/>
-                <style>body{line-height:1.8;padding:5%;}h1{font-size:1.5em;}p{margin:0 0 1em;word-break:break-word;}img{display:block;max-width:100%;height:auto;margin:1em auto;}</style>
+                <link rel="stylesheet" href="images.css"/>
               </head>
               <body>
                 <h1>${xml(title)}</h1>
@@ -241,6 +279,34 @@ object NovelExporter {
               </body>
             </html>
         """.trimIndent()
+    }
+
+    private fun writeCoverImage(zip: ZipOutputStream, candidates: Sequence<StorageFile>): String? {
+        for (file in candidates) {
+            val cover = try {
+                file.inputStream().use { it.readBytes() }
+            } catch (_: IOException) {
+                continue
+            }
+            val extension = coverExtension(cover) ?: continue
+            val href = "images/cover.$extension"
+            zip.putNextEntry(ZipEntry("OEBPS/$href"))
+            zip.write(cover)
+            zip.closeEntry()
+            return href
+        }
+        return null
+    }
+
+    // Cached and legacy cover filenames do not necessarily match their format.
+    private fun coverExtension(bytes: ByteArray): String? = when {
+        bytes.size < 12 -> null
+        bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte() -> "jpg"
+        bytes.copyOf(8).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) -> "png"
+        String(bytes, 0, 6, StandardCharsets.US_ASCII) in setOf("GIF87a", "GIF89a") -> "gif"
+        String(bytes, 0, 4, StandardCharsets.US_ASCII) == "RIFF" &&
+            String(bytes, 8, 4, StandardCharsets.US_ASCII) == "WEBP" -> "webp"
+        else -> null
     }
 
     private fun addStoredEntry(zip: ZipOutputStream, name: String, value: String) {
@@ -321,14 +387,197 @@ object NovelExporter {
         // A blocklist alone misses javascript: links, CSS imports/URLs and new HTML features.
         // Keep typography, ruby and tables, but permit only inert attributes and HTTPS links.
         val safe = Safelist.relaxed()
-            .addTags("ruby", "rt", "rp", "rb")
+            .addTags("ruby", "rt", "rp", "rb", "hr")
+            .removeAttributes(":all", "align", "height", "width")
+            .removeAttributes("ul", "type")
             .removeProtocols("a", "href", "ftp", "http", "mailto")
             .addProtocols("a", "href", "https")
             .preserveRelativeLinks(true)
-        return Cleaner(safe).clean(document)
-            .outputSettings(document.outputSettings())
-            .body().html()
+        val body = Cleaner(safe).clean(document).outputSettings(document.outputSettings()).body()
+        formatRichProse(body)
+        return body.html()
     }
+
+    private fun formatRichProse(body: Element) {
+        // Preserve tables and lists while giving each run of unwrapped prose a paragraph.
+        for (container in body.select("div, blockquote, td, th, li").apply { add(body) }) {
+            val nodes = container.childNodes().toList()
+            container.empty()
+            val inline = mutableListOf<Node>()
+            fun flush() {
+                if (inline.isEmpty()) return
+                val paragraph = Element("p")
+                inline.forEach(paragraph::appendChild)
+                inline.clear()
+                if (paragraph.hasText() || paragraph.selectFirst("img, br") != null) {
+                    container.appendChild(paragraph)
+                }
+            }
+            for (node in nodes) {
+                if (node is Element && (node.tag().isBlock ||
+                        node.normalName() == "a" && node.allElements.any { it.tag().isBlock })) {
+                    flush()
+                    container.appendChild(node)
+                } else {
+                    inline.add(node)
+                }
+            }
+            flush()
+        }
+
+        for (original in body.select("p")) {
+            val paragraphs = splitProseParagraphs(original)
+            if (paragraphs.size > 1) {
+                original.parent()?.insertChildren(original.siblingIndex(), paragraphs)
+                original.remove()
+            }
+            for (paragraph in paragraphs) {
+                val indent = ReaderLineIndent()
+                paragraph.traverse { node, _ ->
+                    if (node is TextNode) {
+                        node.text(indent.trim(node.wholeText.replace(HTML_LINE_WHITESPACE, " ")))
+                    } else if (node is Element && node.normalName() == "br") {
+                        indent.startLine()
+                    }
+                }
+                if (!paragraph.hasText() && paragraph.selectFirst("img, br") == null) {
+                    paragraph.appendElement("br")
+                }
+            }
+        }
+    }
+
+    private data class BreakRun(val start: Int, val nextContent: Int, val count: Int)
+
+    /** Split sanitized inline paragraphs at blank lines or fresh full-width indents. */
+    private fun splitProseParagraphs(element: Element): List<Element> {
+        val nodes = element.childNodes().flatMap(::liftInlineBreaks)
+        val separators = mutableListOf<BreakRun>()
+        var leading: BreakRun? = null
+        var trailing: BreakRun? = null
+        var hasContent = false
+        var index = 0
+        while (index < nodes.size) {
+            if (!nodes[index].isBreak()) {
+                if (nodes[index].hasProseContent()) hasContent = true
+                index++
+                continue
+            }
+            val start = index
+            var count = 0
+            while (index < nodes.size) {
+                when {
+                    nodes[index].isBreak() -> count++
+                    nodes[index].isCollapsibleGap() -> Unit
+                    else -> break
+                }
+                index++
+            }
+            val indented = hasFullWidthIndent(nodes, index)
+            val probeStart = if (indented && nodes.getOrNull(index)?.hasProseContent() != true) index + 1 else index
+            val followedByContent = (probeStart until nodes.size)
+                .firstOrNull { nodes[it].isBreak() || nodes[it].hasProseContent() }
+                ?.let { !nodes[it].isBreak() } == true
+            val gap = BreakRun(start, index, count)
+            if (!followedByContent) {
+                if (hasContent && index == nodes.size) trailing = gap
+                continue
+            }
+            if (!hasContent) leading = gap
+            else if (count > 1 || indented) separators += gap
+        }
+        if (separators.isEmpty()) return listOf(element)
+
+        fun fragment(start: Int, end: Int): Element = Element("p").also { paragraph ->
+            for (i in start until end) {
+                val child = nodes[i].clone()
+                if (child is TextNode) {
+                    var text = child.wholeText
+                    if (i == start) text = text.trimStart(::isHtmlSpace)
+                    if (i == end - 1) text = text.trimEnd(::isHtmlSpace)
+                    if (text.isEmpty()) continue
+                    child.text(text)
+                }
+                paragraph.appendChild(child)
+            }
+        }
+
+        fun blankLine(): Element = Element("p").apply { appendElement("br") }
+        return buildList {
+            repeat(leading?.count ?: 0) { add(blankLine()) }
+            var start = leading?.nextContent ?: 0
+            for (gap in separators) {
+                add(fragment(start, gap.start))
+                repeat(gap.count - 1) { add(blankLine()) }
+                start = gap.nextContent
+            }
+            add(fragment(start, trailing?.start ?: nodes.size))
+            repeat((trailing?.count ?: 1) - 1) { add(blankLine()) }
+        }
+    }
+
+    /** Lift hard breaks out of inline wrappers so split paragraphs keep styling on both sides. */
+    private fun liftInlineBreaks(node: Node): List<Node> {
+        if (node !is Element || node.normalName() == "ruby" || node.childNodeSize() == 0) return listOf(node)
+        val children = node.childNodes().flatMap(::liftInlineBreaks)
+        if (children.none { it.isBreak() }) return listOf(node)
+        return buildList {
+            var run: Element? = null
+            for (child in children) {
+                if (child.isBreak()) {
+                    add(child)
+                    run = null
+                } else {
+                    val wrapper = run ?: node.shallowClone().also {
+                        add(it)
+                        run = it
+                    }
+                    wrapper.appendChild(if (child.hasParent()) child.clone() else child)
+                }
+            }
+        }
+    }
+
+    private fun Node.isBreak(): Boolean = this is Element && normalName() == "br"
+
+    private fun Node.isCollapsibleGap(): Boolean = when (this) {
+        is TextNode -> wholeText.all(::isHtmlSpace)
+        is Element -> !isBreak() && normalName() != "img" && normalName() != "ruby" &&
+            childNodes().all { it.isCollapsibleGap() }
+        else -> false
+    }
+
+    private fun Node.hasProseContent(): Boolean = when (this) {
+        is TextNode -> wholeText.isNotBlank()
+        is Element -> normalName() == "img" || hasText() || selectFirst("img") != null
+        else -> false
+    }
+
+    private fun hasFullWidthIndent(nodes: List<Node>, startIndex: Int): Boolean {
+        var spaces = 0
+        fun scan(node: Node): Boolean? = when (node) {
+            is TextNode -> {
+                for (ch in node.wholeText) {
+                    if (spaces == 0 && isHtmlSpace(ch)) continue
+                    if (ch != '\u3000') return false
+                    if (++spaces == 2) return true
+                }
+                null
+            }
+            is Element -> when (node.normalName()) {
+                "br", "img" -> false
+                "rp" -> null
+                else -> node.childNodes().firstNotNullOfOrNull { scan(it) }
+            }
+            else -> null
+        }
+        for (i in startIndex until nodes.size) {
+            scan(nodes[i])?.let { return it }
+        }
+        return false
+    }
+
+    private fun isHtmlSpace(char: Char): Boolean = char in " \t\n\r\u000c"
 
     private data class EpubImage(
         val file: StorageFile,
@@ -342,6 +591,7 @@ object NovelExporter {
         "data-lazy-src",
         "src"
     )
+    private val HTML_LINE_WHITESPACE = Regex("[\\t\\n\\r\\f]+")
 
     private fun xml(value: String): String = value
         .filter { character ->
