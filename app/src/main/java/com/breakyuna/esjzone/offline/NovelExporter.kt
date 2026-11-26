@@ -2,6 +2,8 @@ package com.breakyuna.esjzone.offline
 
 import com.breakyuna.esjzone.storage.StorageFile
 import com.breakyuna.esjzone.ui.reader.ReaderLineIndent
+import java.io.DataInputStream
+import java.io.EOFException
 import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -74,6 +76,7 @@ object NovelExporter {
         val records = chaptersForExport(manifest, selectedChapterUrls)
         val chapterTitles = ArrayList<String>(records.size)
         val images = linkedMapOf<String, EpubImage>()
+        val skippedImages = hashSetOf<String>()
         ZipOutputStream(output.buffered()).use { zip ->
             addStoredEntry(zip, "mimetype", "application/epub+zip")
             addTextEntry(zip, "META-INF/container.xml", containerXml())
@@ -88,23 +91,10 @@ object NovelExporter {
                 val chapterImages = components.filter { it.type == "image" }
                 chapterImages.forEach { component ->
                     val key = component.imageKey()
-                    if (key in images) return@forEach
-                    val file = imageLoader(component)?.takeIf(StorageFile::isFile) ?: return@forEach
-                    // SVG is active XML; do not copy unsanitized remote documents into an EPUB.
-                    if (file.extension.equals("svg", ignoreCase = true) ||
-                        component.mediaType?.substringBefore(';')?.trim().equals("image/svg+xml", ignoreCase = true)) {
-                        return@forEach
-                    }
-                    val extension = file.extension.takeIf { it.matches(Regex("[A-Za-z0-9]{1,5}")) }
-                        ?.lowercase(Locale.ROOT)
-                        ?: "img"
-                    images[key] = EpubImage(
-                        file = file,
-                        href = "images/image-${images.size + 1}.$extension",
-                        mediaType = component.mediaType
-                            ?.takeIf { it.startsWith("image/") }
-                            ?: mediaTypeFor(extension)
-                    )
+                    if (key in images || key in skippedImages) return@forEach
+                    val file = imageLoader(component)?.takeIf(StorageFile::isFile)
+                    val image = file?.let { writeChapterImage(zip, it, images.size + 1) }
+                    if (image != null) images[key] = image else skippedImages += key
                 }
                 val chapterNumber = index + 1
                 addTextEntry(
@@ -115,9 +105,6 @@ object NovelExporter {
             }
             addTextEntry(zip, "OEBPS/content.opf", contentOpf(manifest, chapterTitles.size, images.values, coverHref))
             addTextEntry(zip, "OEBPS/nav.xhtml", navigationXhtml(manifest, chapterTitles))
-            images.values.forEach { image ->
-                addBinaryEntry(zip, "OEBPS/${image.href}", image.file)
-            }
         }
     }
 
@@ -288,7 +275,7 @@ object NovelExporter {
             } catch (_: IOException) {
                 continue
             }
-            val extension = coverExtension(cover) ?: continue
+            val extension = imageExtension(cover) ?: continue
             val href = "images/cover.$extension"
             zip.putNextEntry(ZipEntry("OEBPS/$href"))
             zip.write(cover)
@@ -298,8 +285,8 @@ object NovelExporter {
         return null
     }
 
-    // Cached and legacy cover filenames do not necessarily match their format.
-    private fun coverExtension(bytes: ByteArray): String? = when {
+    // Use only recognized EPUB raster formats. SVG can contain active content.
+    private fun imageExtension(bytes: ByteArray): String? = when {
         bytes.size < 12 -> null
         bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte() -> "jpg"
         bytes.copyOf(8).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) -> "png"
@@ -329,21 +316,31 @@ object NovelExporter {
         zip.closeEntry()
     }
 
-    private fun addBinaryEntry(zip: ZipOutputStream, name: String, file: StorageFile) {
-        zip.putNextEntry(ZipEntry(name))
-        file.inputStream().buffered().use { it.copyTo(zip) }
-        zip.closeEntry()
-    }
+    private fun writeChapterImage(zip: ZipOutputStream, file: StorageFile, number: Int): EpubImage? =
+        file.inputStream().buffered().use { input ->
+            val header = ByteArray(12)
+            try {
+                DataInputStream(input).readFully(header)
+            } catch (_: EOFException) {
+                return@use null
+            }
+            val extension = imageExtension(header) ?: return@use null
+            val href = "images/image-$number.$extension"
+            zip.putNextEntry(ZipEntry("OEBPS/$href"))
+            zip.write(header)
+            input.copyTo(zip)
+            zip.closeEntry()
+            EpubImage(href, mediaTypeFor(extension))
+        }
 
     private fun DownloadedComponent.imageKey(): String = localFile ?: value
 
     private fun mediaTypeFor(extension: String): String = when (extension) {
-        "jpg", "jpeg" -> "image/jpeg"
+        "jpg" -> "image/jpeg"
         "png" -> "image/png"
         "gif" -> "image/gif"
         "webp" -> "image/webp"
-        "svg" -> "image/svg+xml"
-        else -> "application/octet-stream"
+        else -> error("Unsupported EPUB image extension: $extension")
     }
 
     private fun richChapterHtml(
@@ -379,6 +376,7 @@ object NovelExporter {
                 IMAGE_URL_ATTRIBUTES.forEach(image::removeAttr)
                 image.removeAttr("srcset")
                 image.attr("src", exportedImage.href)
+                if (!image.hasAttr("alt")) image.attr("alt", "插图")
             } else {
                 val original = component?.value ?: candidates.firstOrNull().orEmpty()
                 image.replaceWith(TextNode("[图片：$original]"))
@@ -580,7 +578,6 @@ object NovelExporter {
     private fun isHtmlSpace(char: Char): Boolean = char in " \t\n\r\u000c"
 
     private data class EpubImage(
-        val file: StorageFile,
         val href: String,
         val mediaType: String
     )

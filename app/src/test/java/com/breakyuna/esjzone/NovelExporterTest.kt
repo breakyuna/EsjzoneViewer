@@ -102,16 +102,16 @@ class NovelExporterTest {
             manifest().chapters.single().copy(index = number - 1, name = "Chapter $number", url = "/forum/1/$number.html")
         }
         val output = ByteArrayOutputStream()
-        val image = File.createTempFile("selected-chapter", ".png")
+        val image = File.createTempFile("selected-chapter", ".file")
         val loadedChapters = mutableListOf<String>()
         val loadedImages = mutableListOf<String>()
         try {
-            image.writeBytes(byteArrayOf(1, 2, 3))
+            image.writeBytes(SAMPLE_PNG)
             NovelExporter.exportEpub(manifest().copy(chapters = records, complete = false), { record ->
                 loadedChapters += record.url
                 chapter(record).copy(contentHtml = null, components = listOf(
                     DownloadedComponent("text", "Body ${record.index}"),
-                    DownloadedComponent("image", "image-${record.index}", mediaType = "image/png")
+                    DownloadedComponent("image", "image-${record.index}", mediaType = "application/octet-stream")
                 ))
             }, output, imageLoader = { component ->
                 loadedImages += component.value
@@ -133,8 +133,11 @@ class NovelExporterTest {
             val navigation = entries.getValue("OEBPS/nav.xhtml")
             assertTrue(!navigation.contains("Chapter 2"))
             assertTrue(navigation.indexOf("Chapter 1") < navigation.indexOf("Chapter 3"))
-            assertTrue(!entries.getValue("OEBPS/content.opf").contains("chapter-3"))
-            assertEquals(2, entries.keys.count { it.startsWith("OEBPS/images/") })
+            val opf = entries.getValue("OEBPS/content.opf")
+            assertTrue(!opf.contains("chapter-3"))
+            assertTrue(!opf.contains("application/octet-stream"))
+            assertEquals(setOf("OEBPS/images/image-1.png", "OEBPS/images/image-2.png"),
+                entries.keys.filter { it.startsWith("OEBPS/images/") }.toSet())
         } finally { image.delete() }
     }
 
@@ -167,14 +170,22 @@ class NovelExporterTest {
     @Test
     fun epubExport_writesUncompressedMimetypeFirstAndRequiredDocuments() {
         val output = ByteArrayOutputStream()
-        val image = File.createTempFile("novel-export-test", ".png").apply {
-            writeBytes(byteArrayOf(1, 2, 3, 4))
+        val image = File.createTempFile("novel-export-test", ".jpg").apply {
+            writeBytes(SAMPLE_PNG)
             deleteOnExit()
         }
+        val record = manifest().chapters.single()
+        val original = chapter(record)
+        val component = original.components.single { it.type == "image" }
+        val snapshot = original.copy(
+            components = original.components.map { if (it == component) it.copy(mediaType = "image/jpeg") else it },
+            contentHtml = original.contentHtml.orEmpty() +
+                """<p><img src="${component.value}" alt="原图说明"><img src="${component.value}" alt=""></p>"""
+        )
 
         NovelExporter.exportEpub(
             manifest = manifest(),
-            chapterLoader = ::chapter,
+            chapterLoader = { snapshot },
             output = output,
             imageLoader = { StorageFile(image) }
         )
@@ -211,7 +222,13 @@ class NovelExporterTest {
         assertTrue(chapterXhtml.contains("<img"))
         assertTrue(!chapterXhtml.contains("align=") && !chapterXhtml.contains("width=") &&
             !chapterXhtml.contains("height="))
-        assertTrue(entries.containsKey("OEBPS/images/image-1.png"))
+        val exportedImages = Jsoup.parse(chapterXhtml).select("img")
+        assertEquals(listOf("插图", "原图说明", ""), exportedImages.map { it.attr("alt") })
+        assertTrue(exportedImages.all { it.hasAttr("alt") && it.attr("src") == "images/image-1.png" })
+        val opf = entries.getValue("OEBPS/content.opf").second
+        assertTrue(opf.contains("href=\"images/image-1.png\" media-type=\"image/png\""))
+        assertTrue(!opf.contains("image/jpeg"))
+        assertArrayEquals(SAMPLE_PNG, epubEntry(output, "OEBPS/images/image-1.png"))
     }
 
     @Test
@@ -339,18 +356,66 @@ class NovelExporterTest {
     }
 
     @Test
-    fun epubExport_rejectsEmbeddedSvgAssets() {
+    fun epubExport_rejectsSvgEvenWhenSavedWithARasterExtension() {
         val output = ByteArrayOutputStream()
-        val svg = File.createTempFile("novel-active-image", ".svg")
+        val svg = File.createTempFile("novel-active-image", ".png")
         try {
             svg.writeText("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")
             NovelExporter.exportEpub(manifest(), ::chapter, output, imageLoader = { StorageFile(svg) })
-            assertTrue(!epubChapter(output).contains("<img"))
+            val chapter = epubChapter(output)
+            assertTrue(!chapter.contains("<img"))
+            assertTrue(chapter.contains("[图片：https://example.com/illustration.jpg]"))
+            assertTrue(epubEntryNames(output).none { it.startsWith("OEBPS/images/") })
+            assertTrue(!epubEntry(output, "OEBPS/content.opf").toString(StandardCharsets.UTF_8).contains("images/"))
         } finally { svg.delete() }
+    }
+
+    @Test
+    fun epubExport_skipsTruncatedAndRepeatedRejectedImagesWithoutReloading() {
+        val records = (1..2).map { number ->
+            manifest().chapters.single().copy(index = number - 1, name = "Chapter $number", url = "/forum/1/$number.html")
+        }
+        val output = ByteArrayOutputStream()
+        val truncated = File.createTempFile("novel-truncated-image", ".png")
+        var loads = 0
+        try {
+            truncated.writeBytes(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47))
+            NovelExporter.exportEpub(
+                manifest = manifest().copy(chapters = records),
+                chapterLoader = { record ->
+                    val base = chapter(record)
+                    val image = base.components.single { it.type == "image" }
+                    base.copy(components = base.components + image)
+                },
+                output = output,
+                imageLoader = {
+                    loads++
+                    StorageFile(truncated)
+                }
+            )
+            assertEquals(1, loads)
+            assertTrue(epubEntryNames(output).none { it.startsWith("OEBPS/images/") })
+            assertTrue(!epubEntry(output, "OEBPS/content.opf").toString(StandardCharsets.UTF_8).contains("images/"))
+            listOf("OEBPS/chapter-1.xhtml", "OEBPS/chapter-2.xhtml").forEach { name ->
+                val xhtml = epubEntry(output, name).toString(StandardCharsets.UTF_8)
+                assertTrue(!xhtml.contains("<img"))
+                assertTrue(xhtml.contains("[图片：https://example.com/illustration.jpg]"))
+            }
+        } finally { truncated.delete() }
     }
 
     private fun epubChapter(output: ByteArrayOutputStream): String =
         epubEntry(output, "OEBPS/chapter-1.xhtml").toString(StandardCharsets.UTF_8)
+
+    private fun epubEntryNames(output: ByteArrayOutputStream): Set<String> = buildSet {
+        ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                add(entry.name)
+                entry = zip.nextEntry
+            }
+        }
+    }
 
     private fun epubEntry(output: ByteArrayOutputStream, name: String): ByteArray =
         ZipInputStream(ByteArrayInputStream(output.toByteArray())).use { zip ->
