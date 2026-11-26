@@ -15,6 +15,12 @@ import com.breakyuna.esjzone.ui.reader.readerBodyListIndex
 import com.breakyuna.esjzone.ui.reader.readerInitialBodyIndex
 import com.breakyuna.esjzone.ui.reader.readerItemForContentPosition
 import com.breakyuna.esjzone.ui.reader.readerRebasedScrollAnchor
+import com.breakyuna.esjzone.ui.reader.restoreReaderPosition
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -141,6 +147,35 @@ class ReaderContentPositionTest {
         assertNull(readerRebasedScrollAnchor("heading", "replacement", visible,
             mapOf("replacement" to 0), 0))
         assertNull(readerRebasedScrollAnchor("heading", null, visible, emptyMap(), 0))
+    }
+
+    @Test
+    fun interruptedScrollMutationCanStillRestoreTheParagraph() = runBlocking {
+        assertTrue(restoreReaderPosition(
+            exact = { throw CancellationException("Scroll mutation interrupted") },
+            fallback = { true }
+        ))
+    }
+
+    @Test
+    fun cancellingTheSeekDoesNotMoveTheViewportAgain() = runBlocking {
+        var fallbackCalled = false
+        val seek = launch {
+            val seekContext = currentCoroutineContext()
+            restoreReaderPosition(
+                exact = {
+                    seekContext.cancel()
+                    true
+                },
+                fallback = {
+                    fallbackCalled = true
+                    true
+                }
+            )
+        }
+        seek.join()
+        assertTrue(seek.isCancelled)
+        assertFalse(fallbackCalled)
     }
 
     @Test

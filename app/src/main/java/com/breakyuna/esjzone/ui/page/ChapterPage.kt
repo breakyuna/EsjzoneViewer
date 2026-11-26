@@ -645,8 +645,10 @@ class ChapterPage(
             sameReaderChapter(it.chapter, requestedChapter.value) && it.requiresPassword
         } == true
         val resumePositioning = resumePending && !requestedChapterLocked
+        val hasPendingMark = pendingBookmark != null || pendingUnderline != null
+        val markPositioning = hasPendingMark && !requestedChapterLocked
         val windowLoadingAllowed = canLoadReaderWindow(entryContentRevealed, resumePending, requestedChapterLocked) &&
-            pendingSeekLocation == null && pendingBookmark == null && pendingUnderline == null &&
+            pendingSeekLocation == null && !markPositioning &&
             readerResumed && !deferWindowUpdate
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
         val readerTextTransform: (String) -> String = remember(
@@ -802,7 +804,7 @@ class ChapterPage(
             }
             kotlinx.coroutines.withTimeoutOrNull(2000L) {
                 snapshotFlow {
-                    scrollState.layoutInfo.visibleItemsInfo.any {
+                    scrollState.isScrollInProgress || scrollState.layoutInfo.visibleItemsInfo.any {
                         it.key == anchor.key && it.index == readerListIndex(bodyIndex)
                     }
                 }.first { it }
@@ -1111,52 +1113,21 @@ class ChapterPage(
             }
         }
         val measuredAnchor by measuredAnchorState
-        fun bookmarkStartFor(item: ReaderDisplayItem, blockIndex: Int): ReaderAnchor? {
-            val document = item.entry.document
-            if (!scriptReady || item.entry.requiresPassword || document.contentFingerprint.isBlank()) return null
-            val block = document.blocks.getOrNull(blockIndex) ?: return null
-            val hasText = when (block) {
-                is ReaderBlock.Paragraph -> block.parts.any { it.value.isNotBlank() }
-                is ReaderBlock.Text -> block.value.isNotBlank()
-                else -> false
-            }
-            if (!hasText) return null
-            return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex)
-        }
-        // Skip the continuation of a paragraph whose start is above the screen.
-        // Select the first paragraph starting inside this viewport, across chapter boundaries too.
+        // Prefer a paragraph that starts on screen, with visible continuation text as a fallback.
         val bookmarkTarget by remember(displayByKey, scrollState, pagedMode, horizontalPagerState,
             scriptReady) {
             derivedStateOf(structuralEqualityPolicy()) {
-                if (pagedMode) pagerVisibleItem?.let { item ->
-                    item.page?.segments?.firstNotNullOfOrNull { segment ->
-                        if (segment !is com.breakyuna.esjzone.ui.reader.ReaderPageSegment.TextLine ||
-                            segment.startOffset != 0 || segment.text.text.isBlank()) return@firstNotNullOfOrNull null
-                        bookmarkStartFor(item, segment.blockIndex)?.let { item to it }
-                    }
-                }
-                else scrollState.layoutInfo.let { layout ->
-                    layout.visibleItemsInfo.firstNotNullOfOrNull { visible ->
-                        if (visible.offset < 0 || visible.offset >= layout.viewportEndOffset) return@firstNotNullOfOrNull null
-                        val item = displayByKey[visible.key.toString()] ?: return@firstNotNullOfOrNull null
-                        bookmarkStartFor(item, item.ordinal - 1)?.let { item to it }
-                    }
+                if (!scriptReady) null
+                else if (pagedMode) pagerVisibleItem?.let(::pageBookmarkTarget)
+                else with(scrollState.layoutInfo) {
+                    scrollBookmarkTarget(visibleItemsInfo, maxOf(0, viewportStartOffset), viewportEndOffset, displayByKey)
                 }
             }
         }
-        val bookmarkChapter = bookmarkTarget?.first?.entry?.chapter ?: requestedChapter.value
-        val bookmarkChapterUrl = remember(bookmarkChapter) { chapterIdentity(bookmarkChapter) }
-        val bookmarkDocument = bookmarkTarget?.first?.entry?.takeIf { !it.requiresPassword }?.document
-        val bookmarkPosition = bookmarkTarget?.second
-        val bookmarkParagraph = bookmarkDocument?.let { document ->
-            com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document, bookmarkChapterUrl,
-                bookmarkPosition?.takeIf { it.chapterKey == bookmarkChapterUrl })
-        }
-        val canBookmark = pendingBookmark == null && pendingUnderline == null && pendingScrollAnchor == null &&
-            bookmarkRows != null && bookmarkChapter.url.isNotBlank() &&
-            bookmarkParagraph != null && !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
-        val isBookmarked = bookmarkParagraph != null &&
-            bookmarkParagraph in bookmarkedParagraphs[bookmarkChapterUrl].orEmpty()
+        val canBookmark = !hasPendingMark && pendingScrollAnchor == null &&
+            bookmarkRows != null && bookmarkTarget?.item?.entry?.chapter?.url?.isNotBlank() == true &&
+            !resumePending && pendingSeekLocation == null && !isProgrammaticScroll
+        val isBookmarked = bookmarkTarget?.let { it.blockIndex in bookmarkedParagraphs[it.item.chapterKey].orEmpty() } == true
         // Observe the resulting progress, rather than every pixel of item geometry.
         val measuredChapterProgress by remember(measuredAnchorState, isAtEndOfChapter,
             activeChapter, pagedMode, pagerVisibleItem, displayByKey, scrollState) {
@@ -1269,8 +1240,10 @@ class ChapterPage(
             if (!pagedMode || !scriptReady || !pagination.canMeasure) return@LaunchedEffect
             val snapshot = pagination.measure(paginationSnapshot, readerTextTransform)
             if (paginationSnapshot?.layoutKey != pagination.layoutKey &&
-                !resumePending && pendingSeekLocation == null) {
-                pendingSeekLocation = latestBookLocation
+                !resumePending && pendingSeekLocation == null && pendingBookmark == null && pendingUnderline == null) {
+                pendingSeekLocation = latestBookLocation?.takeIf { location ->
+                    result?.chapters?.any { sameReaderChapter(it.chapter, location.chapter) } == true
+                }
             }
             paginationSnapshot = snapshot
         }
@@ -1279,9 +1252,9 @@ class ChapterPage(
         val currentReadingChapter = currentBookLocation?.chapter
             ?: activeChapter?.chapter
             ?: requestedChapter.value
-        LaunchedEffect(currentReadingChapter, activeChapter?.chapter, resumePending, pendingSeekLocation, isProgrammaticScroll) {
+        LaunchedEffect(currentReadingChapter, activeChapter?.chapter, resumePending, hasPendingMark, pendingSeekLocation, isProgrammaticScroll) {
             if (activeChapter != null && sameReaderChapter(activeChapter.chapter, currentReadingChapter) &&
-                !resumePending && pendingSeekLocation == null && !isProgrammaticScroll) {
+                !resumePending && !hasPendingMark && pendingSeekLocation == null && !isProgrammaticScroll) {
                 navigator.updateReaderRoute(novelId.ifBlank { currentReadingChapter.novelId() },
                     chapterIdentity(currentReadingChapter))
             }
@@ -1380,7 +1353,7 @@ class ChapterPage(
         )
         val lastReadablePosition = remember { mutableStateOf<LocalReadingPosition?>(null) }
         if (activeChapter != null && sameReaderChapter(activeChapter.chapter, currentReadingChapter) &&
-            !resumePending && pendingSeekLocation == null && !isProgrammaticScroll) {
+            !resumePending && !hasPendingMark && pendingSeekLocation == null && !isProgrammaticScroll) {
             lastReadablePosition.value = localHistoryPosition.value
         }
 
@@ -1438,16 +1411,27 @@ class ChapterPage(
         }
 
         val bookmarkCoverMutex = remember { Mutex() }
-        fun toggleBookmarkAt(target: Chapter, document: ReaderChapterDocument,
-            visibleAnchor: ReaderAnchor) {
-            if (updatingBookmark || bookmarkRows == null || target.url.isBlank()) return
-            val targetKey = chapterIdentity(target)
-            val paragraph = com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document, targetKey,
-                visibleAnchor.takeIf { it.chapterKey == targetKey }) ?: return
+        fun toggleBookmark() {
+            if (updatingBookmark || !canBookmark) return
+            val bookmark = bookmarkTarget ?: return
+            val item = bookmark.item
+            val target = item.entry.chapter
+            val targetKey = item.chapterKey
+            val document = item.entry.document
+            val paragraph = bookmark.blockIndex
+            val displayOffset = bookmark.displayOffset
+            val textMappings = if (identityOffsets) null else convertedText?.blockMappings
+            val offset = when {
+                bookmark.startsInViewport -> 0
+                displayOffset != null -> if (identityOffsets) displayOffset
+                    else textMappings?.get(document.blocks[paragraph])?.toSource(displayOffset) ?: 0
+                else -> scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == item.key }?.let { visible ->
+                    anchorFor(item, visible.offset, visible.size)?.offset
+                } ?: 0
+            }
             val coverSource = novelCoverUrl.ifBlank { localHistoryPosition.value.novelCoverUrl }
             val currentNovelUrl = novelUrl.ifBlank { localHistoryPosition.value.novelUrl }
-            val positionAnchor = ReaderAnchor(targetKey, document.contentFingerprint, paragraph)
-            val positionExcerpt = ReaderBookmarkPosition.excerpt(document, positionAnchor, ::textOffsets)
+            val positionAnchor = ReaderAnchor(targetKey, document.contentFingerprint, paragraph, offset)
             // Acquire on the UI thread before launching, including callers from gestures.
             updatingBookmark = true
             val finalNovelId = novelId.ifBlank { target.novelId() }
@@ -1466,6 +1450,8 @@ class ChapterPage(
                                 dao.deleteAll(matches)
                                 false
                             } else {
+                                val positionExcerpt = ReaderBookmarkPosition.excerpt(document, positionAnchor,
+                                    { textMappings?.get(it) })
                                 dao.insert(
                                     com.breakyuna.esjzone.database.entity.Bookmark(
                                         chapterUrl = targetKey,
@@ -1519,12 +1505,6 @@ class ChapterPage(
             }
         }
 
-        fun toggleBookmark() {
-            if (!canBookmark) return
-            val document = bookmarkDocument ?: return
-            val anchor = bookmarkPosition ?: return
-            toggleBookmarkAt(bookmarkChapter, document, anchor)
-        }
         // Capture the reading account before asynchronous writes can outlive this screen.
         val readingBookshelfScope = remember(authorization) {
             com.breakyuna.esjzone.database.BookshelfRepository.scopeFor(authorization)
@@ -1568,12 +1548,14 @@ class ChapterPage(
         }
 
         fun seekTo(location: ReaderBookLocation) {
+            positionRestoreFailed = false
+            resumePending = false
             pendingUnderline = null
             pendingBookmark = null
             pendingBoundaryTurn = null
             pendingSeekLocation = location
-            val current = currentReadingChapter
-            if (!sameReaderChapter(current, location.chapter)) {
+            if (!sameReaderChapter(currentReadingChapter, location.chapter) ||
+                result?.chapters?.any { sameReaderChapter(it.chapter, location.chapter) } != true) {
                 // A progress/contents jump is already an intentional target
                 // selection. Do not immediately bootstrap another previous
                 // chapter and surprise the window policy with a second load.
@@ -1615,29 +1597,6 @@ class ChapterPage(
             isBookProgressDragging = false
             draggingBookProgress = null
             dismissProgressPreview()
-        }
-
-        var previousRequestedChapterUrl by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(requestedChapter.value.url, readerBodyStartOffset) {
-            val currentRequestedChapterUrl = requestedChapter.value.url
-            val oldRequestedChapterUrl = previousRequestedChapterUrl
-            previousRequestedChapterUrl = currentRequestedChapterUrl
-            if (commentReturnKey != null) return@LaunchedEffect
-            // The first run may be restoring a saved ScrollState after a
-            // background process recreation; keep that position intact.
-            if (
-                oldRequestedChapterUrl == null ||
-                oldRequestedChapterUrl == currentRequestedChapterUrl
-            ) {
-                return@LaunchedEffect
-            }
-            isProgrammaticScroll = true
-            try {
-                if (pagedMode) horizontalPagerState.scrollToPage(0)
-                else scrollState.scrollToItem(readerListIndex(0))
-            } finally {
-                isProgrammaticScroll = false
-            }
         }
 
         // Prime one previous chapter per requested chapter.  LazyColumn's
@@ -1685,9 +1644,12 @@ class ChapterPage(
             deferredResumeChapterKey = if (current.requiresPassword) chapterIdentity(current.chapter) else null
         }
 
-        LaunchedEffect(deferredResumeChapterKey, resumePending, pagedMode, visibleActiveChapterKey) {
-            val key = deferredResumeChapterKey ?: return@LaunchedEffect
-            if (!resumePending) return@LaunchedEffect
+        val deferredMarkChapterKey = if (requestedChapterLocked && hasPendingMark) {
+            chapterIdentity(requestedChapter.value)
+        } else null
+        LaunchedEffect(deferredResumeChapterKey, deferredMarkChapterKey, resumePending, pagedMode, visibleActiveChapterKey) {
+            val key = deferredMarkChapterKey ?: deferredResumeChapterKey?.takeIf { resumePending }
+                ?: return@LaunchedEffect
             snapshotFlow {
                 val scrolling = if (pagedMode) horizontalPagerState.isScrollInProgress
                     else scrollState.isScrollInProgress
@@ -1699,7 +1661,8 @@ class ChapterPage(
             }.first { it }
             // The reader has chosen another chapter; allow its progress and paging controls.
             resumePending = false
-            if (initialUnderline != null) pendingUnderline = null
+            pendingUnderline = null
+            pendingBookmark = null
             deferredResumeChapterKey = null
         }
 
@@ -1742,11 +1705,19 @@ class ChapterPage(
                 else ReaderBookmarkPosition.fallbackContentPosition(entry.document, targetKey, saved.copy(chapterKey = targetKey)))
         }
 
-        LaunchedEffect(pendingSeekLocation, displayItems, paginationReady, scriptReady, readerBodyStartOffset,
-            initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
+        LaunchedEffect(pendingSeekLocation, result?.chapters, displayItems, paginationReady, scriptReady, pagedMode,
+            readerBodyStartOffset, initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
             if (!entryAnimationFinished || !initialScrollPrimed || !paginationReady || !scriptReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
-            val startIndex = firstItemByChapter[chapterIdentity(target.chapter)] ?: return@LaunchedEffect
+            val startIndex = firstItemByChapter[chapterIdentity(target.chapter)] ?: run {
+                val loaded = chapterPageModel.state.value as? ChapterPageModel.State.Result
+                if (loaded != null && loaded.chapters.none { sameReaderChapter(it.chapter, target.chapter) }) {
+                    AppLogger.w("ChapterPage", "Position target is outside the loaded window; releasing seek")
+                    pendingSeekLocation = null
+                    resumePending = false
+                }
+                return@LaunchedEffect
+            }
             positionRestoreFailed = false
             isProgrammaticScroll = true
             val restoreStarted = System.nanoTime()
@@ -1773,38 +1744,30 @@ class ChapterPage(
             resumePending = false
         }
 
-        fun openTargetChapter(target: Chapter) {
+        fun openTargetChapter(target: Chapter, bookmark: ReaderAnchor? = null, underline: ReaderUnderline? = null) {
             positionRestoreFailed = false
-            pendingUnderline = null
-            pendingBookmark = null
+            pendingUnderline = underline?.let { target to it }
+            pendingBookmark = bookmark?.let { target to it.copy(chapterKey = chapterIdentity(target)) }
             pendingBoundaryTurn = null
-            requestedChapter.value = target
-            pendingSeekLocation = null
+            pendingSeekLocation = if (bookmark == null && underline == null) {
+                readerBookLocationFor(target, 0f, bookChapterOrder, bookChapterIndices, progressTextIndex)
+                    ?: ReaderBookLocation(target, -1, 0f, bookChapterOrder.size)
+            } else null
             resumePending = false
+            deferredResumeChapterKey = null
             suppressPreviousBootstrapFor = chapterIdentity(target)
             chapterPageModel.openChapter(target)
-            scope.launch(Dispatchers.Main) {
-                isProgrammaticScroll = true
-                try {
-                if (pagedMode) horizontalPagerState.scrollToPage(0)
-                else scrollState.scrollToItem(readerListIndex(0))
-                } finally {
-                    isProgrammaticScroll = false
-                }
-            }
         }
 
         fun openUnderline(target: Chapter, mark: ReaderUnderline) {
             dismissProgressPreview()
-            openTargetChapter(target)
-            pendingUnderline = target to mark
+            openTargetChapter(target, underline = mark)
         }
 
         fun openBookmark(target: Chapter, bookmark: com.breakyuna.esjzone.database.entity.Bookmark) {
             dismissProgressPreview()
-            openTargetChapter(target)
             // Chapter-only bookmarks keep opening at the chapter start.
-            ReaderAnchor.decode(bookmark.anchor)?.let { pendingBookmark = target to it.copy(chapterKey = chapterIdentity(target)) }
+            openTargetChapter(target, bookmark = ReaderAnchor.decode(bookmark.anchor))
         }
 
         var pageTurnInProgress by pageTurnInProgressForBoundary
@@ -1900,7 +1863,7 @@ class ChapterPage(
             }
         }
         val positioningContent = resumePositioning || pendingSeekLocation != null ||
-            pendingBookmark != null || pendingUnderline != null || pendingScrollAnchor != null
+            markPositioning
         // An appended chapter may still be converting while the visible chapter is ready.
         // Only a changed text configuration blocks input; window growth must not stop a fling.
         val textConfigurationReady = (readerSettings.script == ReaderScript.ORIGINAL &&
@@ -1910,7 +1873,9 @@ class ChapterPage(
             readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
             !showReaderSettings && !showReaderContents && !readerDialogVisible
-        val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible
+        // Once a window rebase is requested, its layout confirmation can run alongside a new drag.
+        val directScrollEnabled = readerInteractionEnabled && !sidePanels.isVisible && !isProgrammaticScroll
+        val pagingEnabled = readerInteractionEnabled && !sidePanels.isVisible && pendingScrollAnchor == null
         val userPagingEnabled = pagingEnabled && !isProgrammaticScroll
         com.breakyuna.esjzone.ui.reader.ReaderGlowFrameMonitor(
             active = customBackground && imageBackground.glowEnabled && imageBackground.glowStrength > 0f &&
@@ -2115,7 +2080,8 @@ class ChapterPage(
         ) {
         ReaderSidePanels(
             state = sidePanels,
-            gesturesEnabled = !pagedMode && readerInteractionEnabled && readerSettings.scrollSideGesturesEnabled,
+            gesturesEnabled = !pagedMode && readerInteractionEnabled && pendingScrollAnchor == null &&
+                readerSettings.scrollSideGesturesEnabled,
             commentsEnabled = commentsAvailable,
             onOpening = { panel ->
                 dismissProgressPreview()
@@ -2202,7 +2168,7 @@ class ChapterPage(
                     ) {
                     LazyColumn(
                         state = scrollState,
-                        userScrollEnabled = !pagedMode && userPagingEnabled,
+                        userScrollEnabled = !pagedMode && directScrollEnabled,
                         modifier = Modifier.fillMaxSize()
                             .nestedScroll(boundaryScrollConnection)
                             .padding(horizontal = readerSettings.horizontalPaddingDp.dp),
@@ -2512,8 +2478,11 @@ class ChapterPage(
                                 .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                                 .onSizeChanged { size ->
                                     if (readerViewport != size) {
-                                        if (!resumePending && pendingSeekLocation == null) {
-                                            pendingSeekLocation = currentBookLocation
+                                        if (!resumePending && pendingSeekLocation == null &&
+                                            pendingBookmark == null && pendingUnderline == null) {
+                                            pendingSeekLocation = currentBookLocation?.takeIf { location ->
+                                                result?.chapters?.any { sameReaderChapter(it.chapter, location.chapter) } == true
+                                            }
                                         }
                                         readerViewport = size
                                     }
@@ -2967,12 +2936,14 @@ class ChapterPage(
                         IconButton(onClick = ::openReaderSettings) {
                             Icon(Icons.Filled.Settings, stringResource(R.string.reader_settings))
                         }
-                        Icon(
-                            imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 12.dp).size(22.dp)
-                        )
+                        IconButton(onClick = ::toggleBookmark, enabled = !updatingBookmark && canBookmark) {
+                            Icon(
+                                imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                contentDescription = stringResource(if (isBookmarked) R.string.reader_remove_bookmark
+                                    else R.string.reader_add_bookmark),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -3011,7 +2982,7 @@ class ChapterPage(
                     showReaderSettings = false
                     navigator.pushIfNotCurrent(ReaderBackgroundPage)
                 },
-                onReflow = { pendingSeekLocation = currentBookLocation },
+                onReflow = { pendingSeekLocation = pendingSeekLocation ?: currentBookLocation },
                 onSettingsChange = ::updateReaderSettings,
                 onBookIndentChange = { chars ->
                     val currentIndent = readerSettingsStore.bookIndents.value[indentBookKey]

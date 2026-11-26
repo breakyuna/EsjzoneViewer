@@ -1,12 +1,23 @@
 package com.breakyuna.esjzone
 
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderBookmarkPosition
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
+import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.ui.page.ReaderChapter
+import com.breakyuna.esjzone.ui.page.pageBookmarkTarget
+import com.breakyuna.esjzone.ui.page.scrollBookmarkTarget
+import com.breakyuna.esjzone.ui.page.scrollChapterItems
 import com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker
+import com.breakyuna.esjzone.ui.reader.ReaderPage
+import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,6 +57,46 @@ class ReaderBookmarkMarkerTest {
         assertNull(ReaderBookmarkMarker.paragraph(document, "key", anchor(9)))
         assertNull(ReaderBookmarkMarker.paragraph(document, "key", anchor(2)))
     }
+
+    @Test fun scrollBookmarksUseVisibleContinuationWhenNoParagraphStartsOnScreen() {
+        val entry = ReaderChapter(Chapter(document.chapter.name, document.chapter.url, false), document)
+        val items = scrollChapterItems(listOf(entry))
+        val itemsByKey = items.associateBy { it.key }
+        val continuation = VisibleItem(1, items[1].key, offset = -120, size = 200)
+        val blank = VisibleItem(2, items[2].key, offset = 80, size = 20)
+        val image = VisibleItem(3, items[3].key, offset = 100, size = 80)
+        val nextParagraph = VisibleItem(4, items[4].key, offset = 180, size = 60)
+        val visible = listOf(continuation, blank, image, nextParagraph)
+
+        val target = requireNotNull(scrollBookmarkTarget(visible, 0, 180, itemsByKey))
+        assertEquals(0, target.blockIndex)
+        assertFalse(target.startsInViewport)
+        assertEquals(3, scrollBookmarkTarget(visible, 0, 200, itemsByKey)?.blockIndex)
+        assertNull(scrollBookmarkTarget(visible, 80, 180, itemsByKey))
+    }
+
+    @Test fun pagedBookmarksRetainContinuationOffsetAndPreferNewParagraphStarts() {
+        val entry = ReaderChapter(Chapter(document.chapter.name, document.chapter.url, false), document)
+        val item = scrollChapterItems(listOf(entry)).first()
+        val image = ReaderPageSegment.Image("cover.jpg")
+        val continuation = ReaderPageSegment.TextLine(AnnotatedString("一段"), emptyMap(), 0.dp, startOffset = 1)
+        val nextParagraph = ReaderPageSegment.TextLine(AnnotatedString("第二段很长"), emptyMap(), 0.dp, blockIndex = 3)
+
+        val target = requireNotNull(pageBookmarkTarget(item.copy(page = ReaderPage(listOf(image, continuation), 0.3f))))
+        assertEquals(0, target.blockIndex)
+        assertEquals(1, target.displayOffset)
+        assertFalse(target.startsInViewport)
+        assertEquals(3, pageBookmarkTarget(item.copy(page = ReaderPage(listOf(continuation, nextParagraph), 0.3f)))?.blockIndex)
+        assertNull(pageBookmarkTarget(item.copy(page = ReaderPage(listOf(image), 2f))))
+    }
+
+    private data class VisibleItem(
+        override val index: Int,
+        override val key: Any,
+        override val offset: Int,
+        override val size: Int,
+        override val contentType: Any? = null
+    ) : LazyListItemInfo
 
     @Test fun ribbonBoundsRespectTypographyNarrowMarginsAndRtl() {
         val gap = 6f

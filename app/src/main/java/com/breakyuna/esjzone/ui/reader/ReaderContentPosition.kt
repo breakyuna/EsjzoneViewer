@@ -3,6 +3,8 @@ package com.breakyuna.esjzone.ui.reader
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** A failed exact seek is only recoverable after a measured fallback succeeds. */
@@ -12,8 +14,10 @@ internal suspend fun restoreReaderPosition(
 ): Boolean {
     suspend fun attempt(timeoutMs: Long, action: suspend () -> Boolean): Boolean = try {
         withTimeoutOrNull(timeoutMs) { action() } == true
-    } catch (error: CancellationException) {
-        throw error
+    } catch (_: CancellationException) {
+        // The list or pager can cancel its own scroll mutation while the seek is still active.
+        currentCoroutineContext().ensureActive()
+        false
     } catch (_: Exception) {
         false
     }
