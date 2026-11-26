@@ -3,6 +3,7 @@ package com.breakyuna.esjzone.ui.reader
 import android.icu.text.Transliterator
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
+import com.breakyuna.esjzone.domain.reader.sourceText
 
 internal data class ReaderScriptSnapshot(
     val script: ReaderScript,
@@ -74,8 +75,7 @@ object ReaderScriptConverter {
         checkCancelled: () -> Unit = {}
     ): ReaderScriptSnapshot {
         checkCancelled()
-        if (script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(nameReplace))
-            return ReaderScriptSnapshot(script, emptyMap(), emptyMap(), nameReplace)
+        val needsTransform = script != ReaderScript.ORIGINAL || ReaderNameReplace.isActive(nameReplace)
         val reusable = previous?.takeIf { it.script == script && it.nameReplace == nameReplace }
         val result = HashMap<String, String>()
         val blocks = HashMap<ReaderBlock, ReaderTextOffsets>()
@@ -87,22 +87,29 @@ object ReaderScriptConverter {
         }
         documents.forEach { document ->
             checkCancelled()
-            add(document.chapter.name)
+            if (needsTransform) add(document.chapter.name)
             document.blocks.forEach { block ->
                 checkCancelled()
-                when (block) {
-                    is com.breakyuna.esjzone.domain.reader.ReaderBlock.Paragraph -> block.parts.forEach { part ->
-                        add(part.value)
-                        add(part.ruby?.reading)
+                if (needsTransform) {
+                    when (block) {
+                        is ReaderBlock.Paragraph -> block.parts.forEach { part ->
+                            add(part.value)
+                            add(part.ruby?.reading)
+                        }
+                        is ReaderBlock.Text -> {
+                            add(block.value)
+                            add(block.ruby?.reading)
+                        }
+                        else -> Unit
                     }
-                    is com.breakyuna.esjzone.domain.reader.ReaderBlock.Text -> {
-                        add(block.value)
-                        add(block.ruby?.reading)
-                    }
-                    else -> Unit
                 }
-                blocks[block] = reusable?.blockMappings?.get(block) ?:
-                    ReaderNameReplace.blockMapping(block, nameReplace) { blockMapping(it, script) }
+                val offsets = reusable?.blockMappings?.get(block) ?: if (needsTransform) {
+                    val transformed = untrimmedBlockMapping(block, script, nameReplace)
+                    readerUnindentedOffsets(transformed.text, transformed)
+                } else {
+                    readerUnindentedOffsets(block.sourceText())
+                }
+                if (offsets != null) blocks[block] = offsets
             }
         }
         return ReaderScriptSnapshot(script, result, blocks, nameReplace)
@@ -132,4 +139,12 @@ object ReaderScriptConverter {
         com.breakyuna.esjzone.domain.reader.ReaderBlock.LineBreak -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity("\n")
         is com.breakyuna.esjzone.domain.reader.ReaderBlock.Image -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity("")
     }
+
+    internal fun untrimmedBlockMapping(
+        block: ReaderBlock,
+        script: ReaderScript,
+        names: ReaderNameReplaceSettings
+    ): ReaderTextOffsets = if (ReaderNameReplace.isActive(names)) {
+        ReaderNameReplace.blockMapping(block, names) { blockMapping(it, script) }
+    } else blockMapping(block, script)
 }

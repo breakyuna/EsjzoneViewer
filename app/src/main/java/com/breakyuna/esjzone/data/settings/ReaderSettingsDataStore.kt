@@ -35,9 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -62,29 +60,8 @@ class ReaderSettingsDataStore(
     )
 
     private val migrationMutex = Mutex()
-    private val bookIndentMutex = Mutex()
     private var pendingReaderSave: Job? = null
-    private var pendingBookIndentSave: Job? = null
-    private var persistedBookIndents = emptyMap<String, Int>()
-    private val pendingBookIndents = mutableMapOf<String, BookIndentSelection>()
-    private val visibleBookIndents = MutableStateFlow<Map<String, Int>>(emptyMap())
     private val gson = Gson()
-
-    internal val bookIndents: StateFlow<Map<String, Int>> = visibleBookIndents.asStateFlow()
-
-    init {
-        scope.launch {
-            bookIndentMutex.withLock {
-                val preferences = dataStore.data
-                    .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
-                    .first()
-                synchronized(this@ReaderSettingsDataStore) {
-                    persistedBookIndents = preferences.readBookIndents()
-                    publishBookIndents()
-                }
-            }
-        }
-    }
 
     val settings: StateFlow<ReaderSettings> = dataStore.data
         .catch { error -> if (error is IOException) emit(emptyPreferences()) else throw error }
@@ -134,9 +111,6 @@ class ReaderSettingsDataStore(
         val json = JsonObject()
         for (key in BACKUP_STRING_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
         json.addProperty(FIRST_LINE_INDENT_CHARS.name, preferences.readIndentChars())
-        json.add(BOOK_INDENTS, JsonObject().apply {
-            preferences.readBookIndents().forEach { (bookKey, chars) -> addProperty(bookKey, chars) }
-        })
         for (key in BACKUP_FLOAT_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
         for (key in BACKUP_LONG_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
         for (key in BACKUP_BOOLEAN_KEYS) preferences[key]?.let { json.addProperty(key.name, it) }
@@ -155,56 +129,42 @@ class ReaderSettingsDataStore(
         read(BACKUP_LONG_KEYS) { require(it.isNumber); it.asString.toLong() }
         // Keys of removed settings (REMOVED_SETTING_KEYS) in older archives are ignored.
         read(BACKUP_BOOLEAN_KEYS) { require(it.isBoolean); it.asBoolean }
-        read(listOf(FIRST_LINE_INDENT_CHARS)) { require(it.isNumber); it.asString.toInt().coerceIn(0, 2) }
+        read(listOf(FIRST_LINE_INDENT_CHARS)) { require(it.isNumber); normalizeIndentChars(it.asString.toInt()) }
         if (!contains(FIRST_LINE_INDENT_CHARS)) {
             // Early v3 ZIP archives used the same boolean key as the old DataStore.
             read(listOf(LEGACY_FIRST_LINE_INDENT)) { require(it.isBoolean); it.asBoolean }
-        }
-        json[BOOK_INDENTS]?.asJsonObject?.entrySet()?.forEach { (bookKey, value) ->
-            require(bookKey.isNotBlank() && value.isJsonPrimitive && value.asJsonPrimitive.isNumber)
-            this[bookIndentKey(bookKey)] = value.asString.toInt().coerceIn(0, 2)
         }
     }
 
     internal suspend fun restoreBackup(backup: Preferences, photoName: String?) {
         awaitPendingSettingsSaves()
-        bookIndentMutex.withLock {
-            val restored = dataStore.edit { preferences ->
-                fun <T> replace(keys: List<Preferences.Key<T>>) {
-                    keys.forEach { key ->
-                        val value = backup[key]
-                        if (value == null) preferences.remove(key) else preferences[key] = value
-                    }
-                }
-                replace(BACKUP_STRING_KEYS)
-                replace(BACKUP_FLOAT_KEYS)
-                replace(BACKUP_LONG_KEYS)
-                replace(BACKUP_BOOLEAN_KEYS)
-                preferences[FIRST_LINE_INDENT_CHARS] = backup.readIndentChars()
-                preferences.remove(LEGACY_FIRST_LINE_INDENT)
-                preferences.asMap().keys.filter { it.name.startsWith(BOOK_INDENT_PREFIX) }
-                    .forEach { preferences.remove(it) }
-                backup.readBookIndents().forEach { (bookKey, chars) -> preferences[bookIndentKey(bookKey)] = chars }
-                if (photoName != null) {
-                    preferences[IMAGE_FILE] = photoName
-                } else {
-                    preferences.remove(IMAGE_FILE)
-                    if (preferences[BACKGROUND] == ReaderBackground.CUSTOM_IMAGE.name) {
-                        preferences[BACKGROUND] = ReaderBackground.SYSTEM.name
-                    }
+        dataStore.edit { preferences ->
+            fun <T> replace(keys: List<Preferences.Key<T>>) {
+                keys.forEach { key ->
+                    val value = backup[key]
+                    if (value == null) preferences.remove(key) else preferences[key] = value
                 }
             }
-            synchronized(this) {
-                persistedBookIndents = restored.readBookIndents()
-                publishBookIndents()
+            replace(BACKUP_STRING_KEYS)
+            replace(BACKUP_FLOAT_KEYS)
+            replace(BACKUP_LONG_KEYS)
+            replace(BACKUP_BOOLEAN_KEYS)
+            preferences[FIRST_LINE_INDENT_CHARS] = backup.readIndentChars()
+            preferences.remove(LEGACY_FIRST_LINE_INDENT)
+            if (photoName != null) {
+                preferences[IMAGE_FILE] = photoName
+            } else {
+                preferences.remove(IMAGE_FILE)
+                if (preferences[BACKGROUND] == ReaderBackground.CUSTOM_IMAGE.name) {
+                    preferences[BACKGROUND] = ReaderBackground.SYSTEM.name
+                }
             }
         }
     }
 
     /** Only these fields change, so edits made elsewhere in reading settings survive applying a photo. */
     suspend fun saveImageBackground(background: ReaderImageBackground) {
-        val pending = synchronized(this) { pendingReaderSave }
-        pending?.join()
+        awaitPendingSettingsSaves()
         val value = background.sanitized()
         dataStore.edit {
             it[IMAGE_FILE] = value.fileName
@@ -294,12 +254,13 @@ class ReaderSettingsDataStore(
         }
     }
 
-    fun saveInBackground(settings: ReaderSettings) {
+    fun saveScriptInBackground(script: ReaderScript) {
         scope.launch {
+            awaitPendingSettingsSaves()
             try {
-                save(settings)
+                dataStore.edit { it[SCRIPT] = script.name }
             } catch (e: IOException) {
-                AppLogger.e("ReaderSettingsDataStore", "Failed to save reader settings in background", e)
+                AppLogger.e("ReaderSettingsDataStore", "Failed to save reader script", e)
             }
         }
     }
@@ -319,51 +280,18 @@ class ReaderSettingsDataStore(
         }
     }
 
-    internal fun saveBookIndentInBackground(bookKey: String, chars: Int) {
-        require(bookKey.isNotBlank())
-        val selection = BookIndentSelection(chars.coerceIn(0, 2))
-        synchronized(this) {
-            pendingBookIndents[bookKey] = selection
-            val previous = pendingBookIndentSave
-            pendingBookIndentSave = scope.launch {
-                // Keep rapid selections in order, including selections from different books.
-                previous?.join()
-                bookIndentMutex.withLock {
-                    val saved = try {
-                        dataStore.edit { it[bookIndentKey(bookKey)] = selection.chars }
-                    } catch (e: IOException) {
-                        AppLogger.e("ReaderSettingsDataStore", "Failed to save book indent", e)
-                        null
-                    }
-                    synchronized(this@ReaderSettingsDataStore) {
-                        if (saved != null) persistedBookIndents = saved.readBookIndents()
-                        if (pendingBookIndents[bookKey] === selection) pendingBookIndents.remove(bookKey)
-                        publishBookIndents()
-                    }
-                }
-            }
-            publishBookIndents()
-        }
-    }
-
-    private class BookIndentSelection(val chars: Int)
-
-    // Called under the store monitor. An older write may update disk while a newer selection is visible.
-    private fun publishBookIndents() {
-        visibleBookIndents.value = persistedBookIndents + pendingBookIndents.mapValues { it.value.chars }
-    }
-
     private suspend fun awaitPendingSettingsSaves() {
-        val (reader, bookIndent) = synchronized(this) { pendingReaderSave to pendingBookIndentSave }
-        reader?.join()
-        bookIndent?.join()
+        synchronized(this) { pendingReaderSave }?.join()
     }
 
     /** Copies the legacy synchronous preference store once, keeping the Reader API compatible. */
     suspend fun migrateFromLegacy(context: Context) {
         migrationMutex.withLock {
             val current = runCatching { dataStore.data.first() }.getOrElse { emptyPreferences() }
-            if (current.contains(LEGACY_FIRST_LINE_INDENT)) {
+            val savedIndent = current[FIRST_LINE_INDENT_CHARS]
+            if (current.contains(LEGACY_FIRST_LINE_INDENT) ||
+                (savedIndent != null && savedIndent != normalizeIndentChars(savedIndent))
+            ) {
                 dataStore.edit { preferences ->
                     preferences[FIRST_LINE_INDENT_CHARS] = preferences.readIndentChars()
                     preferences.remove(LEGACY_FIRST_LINE_INDENT)
@@ -454,14 +382,12 @@ class ReaderSettingsDataStore(
     }
 
     private fun Preferences.readIndentChars(): Int =
-        this[FIRST_LINE_INDENT_CHARS]?.coerceIn(0, 2) ?: if (this[LEGACY_FIRST_LINE_INDENT] == true) 2 else 0
+        this[FIRST_LINE_INDENT_CHARS]?.let(::normalizeIndentChars)
+            ?: if (this[LEGACY_FIRST_LINE_INDENT] == true) 2 else 0
 
-    private fun Preferences.readBookIndents(): Map<String, Int> = buildMap {
-        for ((key, value) in asMap()) {
-            if (key.name.startsWith(BOOK_INDENT_PREFIX) && value is Int) {
-                put(key.name.removePrefix(BOOK_INDENT_PREFIX), value.coerceIn(0, 2))
-            }
-        }
+    private fun normalizeIndentChars(chars: Int): Int = when (chars) {
+        1, 2 -> 2
+        else -> 0
     }
 
     private fun ReaderSettings.sanitized() = copy(
@@ -490,6 +416,7 @@ class ReaderSettingsDataStore(
         preferences[PAGE_ANIMATION] = pageAnimation.name
         preferences[VOLUME_KEY_PAGING] = volumeKeyPaging
         preferences[LONG_PRESS_UNDERLINE] = longPressUnderline
+        preferences[FIRST_LINE_INDENT_CHARS] = normalizeIndentChars(firstLineIndentChars)
         preferences[TAP_PAGING] = tapPagingEnabled
         preferences[SCROLL_SIDE_GESTURES] = scrollSideGesturesEnabled
         preferences[PAGED_BOOKMARK_GESTURES] = pagedBookmarkGesturesEnabled
@@ -567,12 +494,8 @@ class ReaderSettingsDataStore(
         val HORIZONTAL_PADDING = floatPreferencesKey("horizontal_padding")
         val SCRIPT = stringPreferencesKey("script")
         val PAGE_ANIMATION = stringPreferencesKey("page_animation")
-        // Former global preference, retained as the default for novels without an override.
         val FIRST_LINE_INDENT_CHARS = intPreferencesKey("first_line_indent_chars")
         val LEGACY_FIRST_LINE_INDENT = booleanPreferencesKey("first_line_indent")
-        const val BOOK_INDENTS = "book_first_line_indent_chars"
-        const val BOOK_INDENT_PREFIX = "$BOOK_INDENTS:"
-        fun bookIndentKey(bookKey: String) = intPreferencesKey(BOOK_INDENT_PREFIX + bookKey)
         val LONG_PRESS_UNDERLINE = booleanPreferencesKey("long_press_underline")
         val TAP_PAGING = booleanPreferencesKey("tap_paging")
         val SCROLL_SIDE_GESTURES = booleanPreferencesKey("scroll_side_gestures")

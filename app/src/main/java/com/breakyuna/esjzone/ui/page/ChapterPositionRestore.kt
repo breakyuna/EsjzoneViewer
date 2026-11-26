@@ -54,7 +54,6 @@ internal suspend fun restoreChapterPosition(
     horizontalPagerState: PagerState,
     bodyStartOffset: Int,
     textLayouts: Map<String, TextLayoutResult>,
-    identityOffsets: Boolean,
     textOffsets: (ReaderBlock) -> ReaderTextOffsets?
 ): Boolean {
     val targetKey = chapterIdentity(target.chapter)
@@ -71,8 +70,8 @@ internal suspend fun restoreChapterPosition(
             "end" -> chapterItems.lastIndex
             else -> if (!pagedMode) anchor.blockIndex + 1 else {
                 val block = displayItems[startIndex].entry.document.blocks[anchor.blockIndex]
-                val offsets = if (identityOffsets) null else textOffsets(block)
-                readerPageIndexForAnchor(chapterItems.map { it.page }, anchor) { offsets?.toSource(it) ?: it }
+                val offsets = textOffsets(block)
+                readerPageIndexForAnchor(chapterItems.map { it.page }, anchor, offsets)
             }
         }
     }
@@ -107,8 +106,7 @@ internal suspend fun restoreChapterPosition(
                 snapshotFlow { textLayouts[targetItemKey] }.first { it != null }
             }
             if (layout != null) {
-                val offset = if (identityOffsets) exactAnchor.offset
-                    else textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
+                val offset = textOffsets(block)?.toDisplay(exactAnchor.offset) ?: exactAnchor.offset
                 val line = layout.getLineForOffset(offset.coerceIn(0, layout.layoutInput.text.length))
                 scrollState.scrollToItem(
                     readerListIndex(targetIndex), layout.getLineTop(line).roundToInt().coerceAtLeast(0)
@@ -142,15 +140,18 @@ internal suspend fun restoreChapterPosition(
 internal fun readerPageIndexForAnchor(
     pages: List<ReaderPage?>,
     anchor: ReaderAnchor,
-    toSource: (Int) -> Int
-): Int = pages.indexOfLast { candidate ->
-    candidate?.let { page ->
-        val blockIndex = page.contentPosition.toInt()
-        val startOffset = when (val first = page.segments.firstOrNull()) {
-            is ReaderPageSegment.TextLine -> first.startOffset
-            is ReaderPageSegment.Divider -> first.startOffset
-            else -> 0
-        }
-        blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex && toSource(startOffset) <= anchor.offset
-    } == true
-}.coerceAtLeast(0)
+    offsets: ReaderTextOffsets? = null
+): Int {
+    val displayOffset = offsets?.toDisplay(anchor.offset) ?: anchor.offset
+    return pages.indexOfLast { candidate ->
+        candidate?.let { page ->
+            val blockIndex = page.contentPosition.toInt()
+            val startOffset = when (val first = page.segments.firstOrNull()) {
+                is ReaderPageSegment.TextLine -> first.startOffset
+                is ReaderPageSegment.Divider -> first.startOffset
+                else -> 0
+            }
+            blockIndex < anchor.blockIndex || blockIndex == anchor.blockIndex && startOffset <= displayOffset
+        } == true
+    }.coerceAtLeast(0)
+}

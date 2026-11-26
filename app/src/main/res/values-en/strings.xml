@@ -993,7 +993,7 @@
     <string name="reader_background_image_failed">Unable to read the image. Choose a valid image smaller than 32 MB and try again.</string>
     <string name="reader_background_save_failed">Unable to save the background. Please try again.</string>
     <string name="reader_indent_chars">%1$d chars</string>
-    <string name="reader_first_line_indent">First-line indent for this book</string>
+    <string name="reader_first_line_indent">First-line indent</string>
     <string name="reader_color_hue">Hue</string>
     <string name="reader_color_saturation">Saturation</string>
     <string name="reader_color_brightness">Brightness</string>

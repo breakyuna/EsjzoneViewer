@@ -14,16 +14,16 @@ internal data class ReaderUnderlinePosition(val anchor: ReaderAnchor?, val conte
 
 /** Resolve original or legacy rendered offsets; changed text falls back to the saved paragraph. */
 internal fun readerUnderlinePosition(document: ReaderChapterDocument, chapterKey: String, mark: ReaderUnderline,
-    textTransform: (String) -> String, textOffsets: (ReaderBlock) -> ReaderTextOffsets?,
+    textTransform: (String) -> String, legacyOffsets: (ReaderBlock) -> ReaderTextOffsets?,
     names: ReaderNameReplaceSettings = ReaderNameReplaceSettings()): ReaderUnderlinePosition {
     val block = document.blocks.getOrNull(mark.blockIndex)
     val sourceLength = block?.sourceText()?.length ?: 0
     val original = block != null && mark.signature == ReaderUnderlines.sourceSignature(block) && mark.end <= sourceLength
-    val rendered = block?.renderedReaderText(textTransform)
+    val rendered = block?.untrimmedReaderText(textTransform)
     val valid = original || block != null && rendered != null && mark.end <= rendered.length &&
         ReaderUnderlines.signature(block, rendered) == mark.signature
-    val sourceStart = if (original) mark.start else block?.let { textOffsets(it)?.toSource(mark.start) } ?: mark.start
     if (valid) {
+        val sourceStart = if (original) mark.start else block?.let { legacyOffsets(it)?.toSource(mark.start) } ?: mark.start
         val anchor = ReaderAnchor(chapterKey, document.contentFingerprint, mark.blockIndex, sourceStart)
         val position = if (original) mark.blockIndex + mark.start.toFloat() / sourceLength
             else mark.blockIndex + mark.start.toFloat() / rendered!!.length
@@ -45,10 +45,10 @@ internal fun readerUnderlinePosition(document: ReaderChapterDocument, chapterKey
 
 /** Displayed block with its original offsets; safe off the main thread. */
 internal fun readerDisplayOffsets(block: ReaderBlock, script: ReaderScript,
-    names: ReaderNameReplaceSettings): ReaderTextOffsets =
-    if (ReaderNameReplace.isActive(names)) ReaderNameReplace.blockMapping(block, names) {
-        ReaderScriptConverter.blockMapping(it, script)
-    } else ReaderScriptConverter.blockMapping(block, script)
+    names: ReaderNameReplaceSettings): ReaderTextOffsets {
+    val offsets = ReaderScriptConverter.untrimmedBlockMapping(block, script, names)
+    return readerUnindentedOffsets(offsets.text, offsets) ?: offsets
+}
 
 /**
  * Renderings a legacy underline may have been saved in: every script, with the
@@ -69,7 +69,7 @@ private fun readerUnderlineRenderingOptions(names: ReaderNameReplaceSettings): L
         .filter(ReaderNameReplace::isActive).distinct() + ReaderNameReplaceSettings()
     return ReaderScript.entries.flatMap { script ->
         nameOptions.filter { script != ReaderScript.ORIGINAL || it.enabled }
-            .map { option -> { block: ReaderBlock -> readerDisplayOffsets(block, script, option) } }
+            .map { option -> { block: ReaderBlock -> ReaderScriptConverter.untrimmedBlockMapping(block, script, option) } }
     }
 }
 

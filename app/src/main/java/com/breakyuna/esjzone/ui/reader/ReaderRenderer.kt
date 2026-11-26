@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalContentColor
@@ -99,7 +100,8 @@ fun ReaderBlocks(
     onTextLayout: (Int, androidx.compose.ui.text.TextLayoutResult?) -> Unit = { _, _ -> },
     highlights: List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> = emptyList(),
     textOffsets: (ReaderBlock) -> com.breakyuna.esjzone.domain.reader.ReaderTextOffsets = {
-        com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText())
+        val source = it.sourceText()
+        readerUnindentedOffsets(source) ?: ReaderTextOffsets.identity(source)
     },
     links: Map<Int, List<ReaderLink>> = emptyMap(),
     onLinkClick: (String) -> Unit = {},
@@ -198,7 +200,7 @@ fun ReaderBlocks(
     }
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
         LocalReaderUnderlineChapter provides chapterKey, LocalContentColor provides contentColor) {
-        if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else ReaderSelectionContainer(content)
+        if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer(content = content)
     }
 }
 

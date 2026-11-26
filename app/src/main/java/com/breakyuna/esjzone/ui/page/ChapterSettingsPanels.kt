@@ -16,7 +16,6 @@ internal fun ChapterSettingsPanels(
     onConfigureImage: () -> Unit,
     onReflow: () -> Unit,
     onSettingsChange: (ReaderSettings) -> Unit,
-    onBookIndentChange: (Int) -> Unit,
     onDismissSettings: () -> Unit,
     onDismissBrightness: () -> Unit,
     nameReplaceSettings: ReaderNameReplaceSettings,
@@ -45,13 +44,13 @@ internal fun ChapterSettingsPanels(
                 updated.lineSpacingSp != settings.lineSpacingSp ||
                 updated.paragraphSpacingDp != settings.paragraphSpacingDp ||
                 updated.horizontalPaddingDp != settings.horizontalPaddingDp ||
+                updated.firstLineIndentChars != settings.firstLineIndentChars ||
                 updated.script != settings.script
             ) {
                 onReflow()
             }
             onSettingsChange(updated)
         },
-        onBookIndentChange = onBookIndentChange,
         onDismiss = onDismissSettings,
         nameReplaceSettings = nameReplaceSettings,
         onNameReplaceChange = onNameReplaceChange,

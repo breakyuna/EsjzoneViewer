@@ -20,15 +20,12 @@ import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.ReaderTool
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -283,20 +280,30 @@ class DataStoreAcceptanceInstrumentedTest {
     }
 
     @Test
-    fun booleanIndentMigratesAndAnExistingOneCharacterSettingWins() = runBlocking {
+    fun oldGlobalIndentMigratesToZeroOrTwoCharacters() = runBlocking {
         val oldKey = booleanPreferencesKey("first_line_indent")
         val newKey = intPreferencesKey("first_line_indent_chars")
         val migratedKey = booleanPreferencesKey("legacy_reader_settings_migration_complete")
-        for ((old, existing, expected) in listOf(Triple(false, null, 0), Triple(true, null, 2), Triple(true, 1, 1))) {
+        val cases = listOf(
+            Triple(null, null, 0),
+            Triple(false, null, 0),
+            Triple(true, null, 2),
+            Triple(true, 0, 0),
+            Triple(null, 1, 2),
+            Triple(null, 2, 2),
+            Triple(null, 9, 0)
+        )
+        for ((old, existing, expected) in cases) {
             val name = fileName("reader-indent")
             val file = context.preferencesDataStoreFile(name)
             val legacyScope = newScope()
             try {
                 val store = PreferenceDataStoreFactory.create(scope = legacyScope, produceFile = { file })
                 store.edit {
-                    it[oldKey] = old
+                    old?.let { enabled -> it[oldKey] = enabled }
                     it[migratedKey] = true
                     existing?.let { chars -> it[newKey] = chars }
+                    it[intPreferencesKey("book_first_line_indent_chars:book-1")] = 2
                 }
             } finally {
                 requireNotNull(legacyScope.coroutineContext[Job]).cancelAndJoin()
@@ -315,7 +322,7 @@ class DataStoreAcceptanceInstrumentedTest {
                 val store = PreferenceDataStoreFactory.create(scope = verifyScope, produceFile = { file })
                 val persisted = store.data.first()
                 assertFalse(persisted.contains(oldKey))
-                assertEquals(expected, persisted[newKey])
+                assertEquals(expected, persisted[newKey] ?: 0)
             } finally {
                 requireNotNull(verifyScope.coroutineContext[Job]).cancelAndJoin()
                 file.delete()
@@ -324,31 +331,29 @@ class DataStoreAcceptanceInstrumentedTest {
     }
 
     @Test
-    fun bookIndentKeepsTheLatestSelectionWhileEarlierWritesFinish() = runBlocking {
-        val name = fileName("reader-book-indent")
+    fun globalIndentSavesTheLatestSelectionAndResetsWithReaderSettings() = runBlocking {
+        val name = fileName("reader-indent")
         val job = SupervisorJob()
         val scope = CoroutineScope(coroutineContext + job)
         try {
             val reader = ReaderSettingsDataStore(context, scope, name)
-            reader.saveBookIndentInBackground("book-1", 2)
-            reader.saveBookIndentInBackground("book-2", 0)
-            reader.saveBookIndentInBackground("book-1", 1)
-            reader.saveBookIndentInBackground("book-1", 2)
-            val expected = mapOf("book-1" to 2, "book-2" to 0)
-            assertEquals(expected, reader.bookIndents.value)
-
-            val observed = mutableListOf<Map<String, Int>>()
-            val observer = launch(start = CoroutineStart.UNDISPATCHED) {
-                reader.bookIndents.collect { observed += it }
+            val defaults = ReaderSettings()
+            val indented = defaults.copy(firstLineIndentChars = 2)
+            assertEquals(0, reader.settings.value.firstLineIndentChars)
+            reader.saveDebounced(indented)
+            reader.saveDebounced(defaults)
+            reader.saveDebounced(indented)
+            reader.saveScriptInBackground(ReaderScript.TRADITIONAL)
+            withTimeout(5_000) {
+                assertEquals(2, reader.backupSnapshot().first.get("first_line_indent_chars").asInt)
+                assertEquals(indented.copy(script = ReaderScript.TRADITIONAL),
+                    reader.settings.first { it.script == ReaderScript.TRADITIONAL })
             }
-            val (snapshot, _) = try {
-                withTimeout(5_000) { reader.backupSnapshot() }
-            } finally {
-                observer.cancelAndJoin()
+            reader.saveDebounced(defaults)
+            withTimeout(5_000) {
+                assertEquals(0, reader.backupSnapshot().first.get("first_line_indent_chars").asInt)
+                assertEquals(defaults, reader.settings.first { it.firstLineIndentChars == 0 })
             }
-            assertEquals(listOf(expected), observed)
-            assertEquals(expected, snapshot.getAsJsonObject("book_first_line_indent_chars")
-                .entrySet().associate { (key, value) -> key to value.asInt })
         } finally {
             job.cancelAndJoin()
             context.preferencesDataStoreFile(name).delete()

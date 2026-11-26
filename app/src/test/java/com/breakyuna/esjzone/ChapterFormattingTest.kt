@@ -1,9 +1,5 @@
 package com.breakyuna.esjzone
 
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextIndent
-import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.data.reader.ChapterBody
 import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.data.reader.withFormatting
@@ -12,11 +8,14 @@ import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
+import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.ui.reader.readerChapterLinks
-import com.breakyuna.esjzone.ui.reader.readerIndentLayout
+import com.breakyuna.esjzone.ui.reader.ReaderLineIndent
+import com.breakyuna.esjzone.ui.reader.ReaderScript
+import com.breakyuna.esjzone.ui.reader.ReaderScriptConverter
 import com.google.gson.Gson
 import org.jsoup.Jsoup
 import org.junit.Assert.*
@@ -166,16 +165,27 @@ class ChapterFormattingTest {
         assertNull(imageChanged.legacyPositions)
     }
 
-    @Test fun sourceIndentTakesThePlaceOfTheReaderIndentOnlyOnItsOwnHardLine() {
-        val style = TextStyle(textIndent = TextIndent(firstLine = 40.sp))
-        val source = AnnotatedString("　　第一行\n第二行\n 　　第三行")
-        val layout = readerIndentLayout(source, style)
-        val lines = layout.text.split('\u2028')
-        assertEquals(source.text, lines.joinToString("\n"))
-        assertEquals(listOf(0, lines[0].length + lines[1].length + 2), layout.paragraphStyles.map { it.start })
-        assertTrue(layout.paragraphStyles.all { it.item.textIndent == TextIndent.None })
-        val plain = AnnotatedString("正文。\n后文有　　空格")
-        assertSame(plain, readerIndentLayout(plain, style))
+    @Test fun sourceIndentsAreRemovedAcrossStyledRunsWithSourceOffsets() {
+        val paragraph = ReaderBlock.Paragraph(listOf(
+            ReaderBlock.Text("　 "),
+            ReaderBlock.Text("\t甲　乙\r\n", setOf(ReaderTextStyle.Bold)),
+            ReaderBlock.Text("\u00a0　\n  丙 ")
+        ))
+        val plain = ReaderBlock.Text("丁　戊")
+        val document = ReaderChapterDocument(ReaderChapterRef("标题", ""), listOf(paragraph, plain))
+        val snapshot = ReaderScriptConverter.snapshot(listOf(document), ReaderScript.ORIGINAL)
+        val offsets = requireNotNull(snapshot.blockMappings[paragraph])
+        val indent = ReaderLineIndent()
+        val displayed = paragraph.parts.joinToString("") { indent.trim(it.value) }
+
+        assertEquals("甲　乙\r\n\n丙 ", displayed)
+        assertEquals(displayed, offsets.text)
+        assertEquals(paragraph.sourceText().length, offsets.sourceLength)
+        assertEquals(3, offsets.toSourceStart(0))
+        assertEquals(paragraph.sourceText().indexOf('丙'), offsets.toSourceStart(displayed.indexOf('丙')))
+        assertEquals(displayed.indexOf('丙'), offsets.toDisplay(paragraph.sourceText().indexOf('丙') - 1))
+        assertEquals(displayed.indexOf('丙') + 1, offsets.toDisplayEnd(paragraph.sourceText().indexOf('丙') + 1))
+        assertFalse(plain in snapshot.blockMappings)
     }
 
     @Test fun oldSnapshotRecoversDroppedProseFromSavedHtml() {

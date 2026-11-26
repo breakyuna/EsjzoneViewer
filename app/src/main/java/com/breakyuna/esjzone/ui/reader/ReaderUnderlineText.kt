@@ -121,10 +121,9 @@ internal fun ReaderUnderlineText(
     }
     val currentMarks by rememberUpdatedState(displayedMarks)
     val photoTextColor = LocalReaderPhotoText.current
-    val indented = remember(text, style.textIndent) { readerIndentLayout(text, style) }
-    val displayed = remember(indented, highlights, color, photoTextColor) {
-        if (highlights.isEmpty() && photoTextColor == null) indented else buildAnnotatedString {
-            append(indented)
+    val displayed = remember(text, highlights, color, photoTextColor) {
+        if (highlights.isEmpty() && photoTextColor == null) text else buildAnnotatedString {
+            append(text)
             photoTextColor?.let { addStyle(SpanStyle(color = it), 0, length) }
             highlights.forEach { range ->
                 val start = range.min.coerceIn(0, text.length)

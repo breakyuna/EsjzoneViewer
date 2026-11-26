@@ -189,7 +189,6 @@ import com.breakyuna.esjzone.database.entity.LocalReadingActivity
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
-import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderUnderline
@@ -198,6 +197,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.reader.readerUnderlinePosition
 import com.breakyuna.esjzone.ui.reader.readerUnderlineAnchors
 import com.breakyuna.esjzone.ui.reader.readerDisplayOffsets
+import com.breakyuna.esjzone.ui.reader.readerUnindentedOffsets
 import com.breakyuna.esjzone.ui.reader.readerLegacyUnderlineRenderings
 import com.breakyuna.esjzone.ui.reader.readerUnderlineQuote
 import com.breakyuna.esjzone.ui.reader.ReaderPageAnimation
@@ -308,18 +308,7 @@ class ChapterPage(
         var globalReaderSettings by remember(storedReaderSettings) {
             mutableStateOf(storedReaderSettings)
         }
-        val indentBookKey = remember(novelId, novelUrl, chapter.url) {
-            readingStatisticsBookKey(novelId.ifBlank { chapter.novelId() }, novelUrl,
-                if (chapter.source == ChapterSource.WENKU8) {
-                    chapterIdentity(chapter).substringBefore('?').substringBeforeLast('/')
-                } else chapterIdentity(chapter))
-        }
-        val bookIndents by readerSettingsStore.bookIndents.collectAsStateWithLifecycle()
-        val firstLineIndentChars = bookIndents[indentBookKey] ?: storedReaderSettings.firstLineIndentChars
-        val effectiveReaderSettings = remember(globalReaderSettings, firstLineIndentChars) {
-            globalReaderSettings.copy(firstLineIndentChars = firstLineIndentChars)
-        }
-        val readerSettings by rememberUpdatedState(effectiveReaderSettings)
+        val readerSettings by rememberUpdatedState(globalReaderSettings)
         val storedNameReplaceSettings by readerSettingsStore.nameReplaceSettings.collectAsStateWithLifecycle()
         val nameReplaceBookKey = com.breakyuna.esjzone.database.readingStatisticsBookKey(
             novelId, novelUrl, chapter.url
@@ -386,10 +375,9 @@ class ChapterPage(
         val readerTextStyle = readerBodyTextStyle(readerSettings)
 
         fun updateReaderSettings(settings: ReaderSettings) {
-            val updatedGlobal = settings.copy(firstLineIndentChars = globalReaderSettings.firstLineIndentChars)
-            if (updatedGlobal != globalReaderSettings) {
-                globalReaderSettings = updatedGlobal
-                readerSettingsStore.saveDebounced(updatedGlobal)
+            if (settings != globalReaderSettings) {
+                globalReaderSettings = settings
+                readerSettingsStore.saveDebounced(settings)
             }
         }
 
@@ -656,22 +644,19 @@ class ChapterPage(
             pendingSeekLocation == null && !markPositioning &&
             readerResumed && !deferWindowUpdate
         var convertedText by remember { mutableStateOf<ReaderTextSnapshot?>(null) }
-        val readerTextTransform: (String) -> String = remember(
-            readerSettings.script, convertedText, nameReplaceSettings
-        ) {
+        val transformedValues = convertedText?.values?.takeIf { it.isNotEmpty() }
+        val readerTextTransform: (String) -> String = remember(transformedValues) {
             // Keep the last rendered text until its replacement snapshot is ready.
             // Falling back to source text here would reflow the visible paragraph twice.
-            val needsTransform = readerSettings.script != ReaderScript.ORIGINAL || ReaderNameReplace.isActive(nameReplaceSettings)
-            val snapshot = convertedText?.values.takeIf { needsTransform }
             // Composition/layout only looks up immutable, background-prepared results.
-            val transform: (String) -> String = { text -> snapshot?.get(text) ?: text }
+            val transform: (String) -> String = { text -> transformedValues?.get(text) ?: text }
             transform
         }
         LaunchedEffect(readerSettings.script, result?.chapters, nameReplaceSettings) {
             val script = readerSettings.script
             val names = nameReplaceSettings
             val chapters = result?.chapters.orEmpty()
-            if ((script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(names)) || chapters.isEmpty()) {
+            if (chapters.isEmpty()) {
                 convertedText = null
                 return@LaunchedEffect
             }
@@ -683,7 +668,9 @@ class ChapterPage(
                 val workerContext = currentCoroutineContext()
                 val prepared = ReaderScriptConverter.snapshot(chapters.map { it.document }, script, previous, names,
                     checkCancelled = { workerContext.ensureActive() })
-                val values = prepared.values.toMutableMap().apply {
+                val values = if (script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(names)) {
+                    prepared.values
+                } else prepared.values.toMutableMap().apply {
                     chapters.forEach { entry ->
                         workerContext.ensureActive()
                         val name = entry.chapter.name
@@ -723,9 +710,10 @@ class ChapterPage(
             androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.text.TextLayoutResult>()
         }
         var paginationSnapshot by remember { mutableStateOf<ReaderPaginationSnapshot?>(null) }
-        val scriptReady = (readerSettings.script == ReaderScript.ORIGINAL && !ReaderNameReplace.isActive(nameReplaceSettings)) ||
-            (convertedText?.script == readerSettings.script && convertedText?.chapters == result?.chapters &&
-                convertedText?.nameReplace == nameReplaceSettings)
+        val textConfigurationReady = convertedText?.script == readerSettings.script &&
+            convertedText?.nameReplace == nameReplaceSettings
+        val scriptReady = result?.chapters.isNullOrEmpty() ||
+            (textConfigurationReady && convertedText?.chapters == result?.chapters)
         val paginationReady = !pagedMode || (scriptReady && paginationSnapshot?.key == pagination.key)
         val pagedDisplayItems = remember(paginationSnapshot, result?.chapters) {
             paginationSnapshot?.itemsFor(result?.chapters.orEmpty()).orEmpty()
@@ -972,9 +960,8 @@ class ChapterPage(
         // Full-window readiness still gates seeks and cross-chapter restoration below.
         val visiblePageEntry = pagerVisibleItem?.entry
             ?: pagedDisplayItems.getOrNull(horizontalPagerState.currentPage)?.entry
-        val visibleScriptReady = readerSettings.script == ReaderScript.ORIGINAL ||
-            (convertedText?.script == readerSettings.script && visiblePageEntry != null &&
-                convertedText?.chapters?.contains(visiblePageEntry) == true)
+        val visibleScriptReady = textConfigurationReady && visiblePageEntry != null &&
+            convertedText?.chapters?.contains(visiblePageEntry) == true
         val visiblePaginationReady = !pagedMode || (visibleScriptReady &&
             paginationSnapshot?.hasReadablePage(pagination.layoutKey, visiblePageEntry, result?.chapters.orEmpty()) == true)
         val firstContentStarted = remember(chapterPageModel, requestedChapter.value.url) { System.nanoTime() }
@@ -1017,13 +1004,12 @@ class ChapterPage(
         fun searchHighlights(item: ReaderDisplayItem): List<com.breakyuna.esjzone.domain.reader.ReaderHighlight> =
             searchHit?.takeIf { it.anchor.matches(item.chapterKey, item.entry.document) }?.highlights.orEmpty()
 
-        val identityOffsets = readerSettings.script == ReaderScript.ORIGINAL &&
-            !ReaderNameReplace.isActive(nameReplaceSettings)
-        fun textOffsets(block: ReaderBlock): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets? =
-            if (identityOffsets) {
-                com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(block.sourceText())
-            } else if (!scriptReady) null
-            else convertedText?.blockMappings?.get(block)
+        fun displayMapping(block: ReaderBlock) = convertedText?.blockMappings?.get(block)
+        fun textOffsets(block: ReaderBlock): com.breakyuna.esjzone.domain.reader.ReaderTextOffsets =
+            displayMapping(block) ?: block.sourceText().let { source ->
+                val pendingMapping = if (scriptReady) null else readerUnindentedOffsets(source)
+                pendingMapping ?: com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(source)
+            }
 
         // Quotes are read on the database thread, so rebuild mappings instead of sharing the UI cache.
         fun underlineQuote(document: ReaderChapterDocument):
@@ -1105,8 +1091,7 @@ class ChapterPage(
                 val layout = textLayouts[item.key] ?: return null
                 layout.getLineStart(layout.getLineForVerticalPosition((-pixelOffset).coerceAtLeast(0).toFloat()))
             }
-            val sourceOffset = if (identityOffsets) displayOffset
-                else textOffsets(block)?.toSource(displayOffset) ?: return null
+            val sourceOffset = displayMapping(block)?.toSource(displayOffset) ?: displayOffset
             return ReaderAnchor(item.chapterKey, document.contentFingerprint, blockIndex, sourceOffset)
         }
         val measuredAnchorState = remember(displayByKey, activeChapter, scrollState, pagedMode,
@@ -1425,11 +1410,10 @@ class ChapterPage(
             val document = item.entry.document
             val paragraph = bookmark.blockIndex
             val displayOffset = bookmark.displayOffset
-            val textMappings = if (identityOffsets) null else convertedText?.blockMappings
+            val textMappings = convertedText?.blockMappings
             val offset = when {
                 bookmark.startsInViewport -> 0
-                displayOffset != null -> if (identityOffsets) displayOffset
-                    else textMappings?.get(document.blocks[paragraph])?.toSource(displayOffset) ?: 0
+                displayOffset != null -> textMappings?.get(document.blocks[paragraph])?.toSource(displayOffset) ?: displayOffset
                 else -> scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == item.key }?.let { visible ->
                     anchorFor(item, visible.offset, visible.size)?.offset
                 } ?: 0
@@ -1686,10 +1670,10 @@ class ChapterPage(
             }
             if (!scriptReady || entry.requiresPassword) return@LaunchedEffect
             val names = nameReplaceSettings
-            val mappings = convertedText?.blockMappings
+            val script = readerSettings.script
             val position = withContext(Dispatchers.Default) {
                 readerUnderlinePosition(entry.document, chapterIdentity(target), mark, readerTextTransform,
-                    { block -> if (identityOffsets) null else mappings?.get(block) }, names)
+                    { block -> ReaderScriptConverter.untrimmedBlockMapping(block, script, names) }, names)
             }
             val chapterProgress = position.anchor?.let { readerChapterProgress(entry.document, it) } ?: 0f
             val location = readerBookLocationFor(target, chapterProgress, bookChapterOrder,
@@ -1744,7 +1728,7 @@ class ChapterPage(
             val restored = try {
                 restoreChapterPosition(
                     target, startIndex, displayItems, pagedMode, scrollState, horizontalPagerState,
-                    readerBodyStartOffset, textLayouts, identityOffsets, ::textOffsets
+                    readerBodyStartOffset, textLayouts, ::displayMapping
                 ).also {
                     restoreStatus = if (it) "restored" else "failed"
                     // Keep the intermediate offset hidden through the final measure.
@@ -1885,9 +1869,6 @@ class ChapterPage(
             markPositioning
         // An appended chapter may still be converting while the visible chapter is ready.
         // Only a changed text configuration blocks input; window growth must not stop a fling.
-        val textConfigurationReady = (readerSettings.script == ReaderScript.ORIGINAL &&
-            !ReaderNameReplace.isActive(nameReplaceSettings)) ||
-            (convertedText?.script == readerSettings.script && convertedText?.nameReplace == nameReplaceSettings)
         val readerInteractionEnabled = !positioningContent && textConfigurationReady && !entryCoverVisible &&
             readerResumed && visiblePaginationReady && (!pagedMode || pagerLayoutReady) &&
             state is ChapterPageModel.State.Result &&
@@ -2420,7 +2401,7 @@ class ChapterPage(
                                             else if (textLayouts[item.key] != layout) textLayouts[item.key] = layout
                                         },
                                         highlights = searchHighlights(item),
-                                        textOffsets = { textOffsets(it) ?: com.breakyuna.esjzone.domain.reader.ReaderTextOffsets.identity(it.sourceText()) },
+                                        textOffsets = ::textOffsets,
                                         links = item.entry.document.links,
                                         onLinkClick = openReaderLink,
                                         formatting = item.entry.document.formatting,
@@ -3003,14 +2984,6 @@ class ChapterPage(
                 },
                 onReflow = { pendingSeekLocation = pendingSeekLocation ?: currentBookLocation },
                 onSettingsChange = ::updateReaderSettings,
-                onBookIndentChange = { chars ->
-                    val currentIndent = readerSettingsStore.bookIndents.value[indentBookKey]
-                        ?: readerSettingsStore.settings.value.firstLineIndentChars
-                    if (chars != currentIndent) {
-                        pendingSeekLocation = pendingSeekLocation ?: currentBookLocation
-                        readerSettingsStore.saveBookIndentInBackground(indentBookKey, chars)
-                    }
-                },
                 onDismissSettings = { showReaderSettings = false },
                 onDismissBrightness = { showBrightness = false },
                 nameReplaceSettings = nameReplaceSettings,

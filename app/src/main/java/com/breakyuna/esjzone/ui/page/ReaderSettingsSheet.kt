@@ -54,7 +54,6 @@ internal fun ReaderSettingsSheet(
     visible: Boolean,
     settings: ReaderSettings,
     onSettingsChange: (ReaderSettings) -> Unit,
-    onBookIndentChange: (Int) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     customImageAvailable: Boolean? = false,
@@ -189,14 +188,14 @@ internal fun ReaderSettingsSheet(
                         }
                         ReaderLayoutSlider(draft, settings, ::commit) { draft = it }
                     } else if (tab == 1) {
+                        val indentOptions = listOf(0, 2)
                         ChoiceSettingRow(
                             title = stringResource(R.string.reader_first_line_indent),
-                            options = (0..2).map { stringResource(R.string.reader_indent_chars, it) },
-                            selectedIndex = draft.firstLineIndentChars,
+                            options = indentOptions.map { stringResource(R.string.reader_indent_chars, it) },
+                            selectedIndex = indentOptions.indexOf(draft.firstLineIndentChars),
                             readerSheetStyle = true
-                        ) { chars ->
-                            draft = draft.copy(firstLineIndentChars = chars)
-                            onBookIndentChange(chars)
+                        ) { index ->
+                            commit(draft.copy(firstLineIndentChars = indentOptions[index]))
                         }
                         ReaderToggle(stringResource(R.string.reader_show_system_status), draft.showSystemStatusBar) { commit(draft.copy(showSystemStatusBar = it)) }
                         ReaderToggle(stringResource(R.string.reader_show_system_navigation), draft.showSystemNavigationBar) { commit(draft.copy(showSystemNavigationBar = it)) }
@@ -276,9 +275,7 @@ internal fun ReaderSettingsSheet(
         text = { Text(stringResource(R.string.reader_reset_confirmation)) },
         confirmButton = {
             TextButton(onClick = {
-                val defaults = ReaderSettings()
-                commit(defaults)
-                onBookIndentChange(defaults.firstLineIndentChars)
+                commit(ReaderSettings())
                 confirmReset = false
             }) { Text(stringResource(R.string.reader_reset)) }
         },

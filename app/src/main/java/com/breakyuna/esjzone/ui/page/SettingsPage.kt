@@ -294,8 +294,8 @@ object SettingsPage : AppDestination {
                             checked = readerSettings.script != ReaderScript.ORIGINAL,
                             icon = Icons.Filled.Translate
                         ) { enabled ->
-                            PresentationAccess.readerSettings.saveInBackground(
-                                readerSettings.copy(script = if (enabled) ReaderScript.SIMPLIFIED else ReaderScript.ORIGINAL)
+                            PresentationAccess.readerSettings.saveScriptInBackground(
+                                if (enabled) ReaderScript.SIMPLIFIED else ReaderScript.ORIGINAL
                             )
                         }
                         if (readerSettings.script != ReaderScript.ORIGINAL) {
@@ -306,8 +306,8 @@ object SettingsPage : AppDestination {
                                 ),
                                 selectedIndex = if (readerSettings.script == ReaderScript.SIMPLIFIED) 0 else 1
                             ) { index ->
-                                PresentationAccess.readerSettings.saveInBackground(
-                                    readerSettings.copy(script = if (index == 0) ReaderScript.SIMPLIFIED else ReaderScript.TRADITIONAL)
+                                PresentationAccess.readerSettings.saveScriptInBackground(
+                                    if (index == 0) ReaderScript.SIMPLIFIED else ReaderScript.TRADITIONAL
                                 )
                             }
                         }

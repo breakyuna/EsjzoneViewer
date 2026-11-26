@@ -12,6 +12,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderTextOffsets
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.ui.page.readerPageIndexForAnchor
+import com.breakyuna.esjzone.ui.reader.readerUnindentedOffsets
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplace
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceRule
 import com.breakyuna.esjzone.ui.reader.ReaderNameReplaceSettings
@@ -94,20 +95,30 @@ class ReaderBookmarkPositionTest {
         // Default layout: heading, block 1 split twice, block 3 split at display offset 5.
         val defaultPages = listOf(ReaderPage(emptyList(), -1f), ReaderPage(listOf(line(1, 0)), 1f),
             ReaderPage(listOf(line(1, 6)), 1.4f), ReaderPage(listOf(line(3, 0)), 3f), ReaderPage(listOf(line(3, 5)), 3.5f))
-        assertEquals(4, readerPageIndexForAnchor(defaultPages, anchor) { it })
+        assertEquals(4, readerPageIndexForAnchor(defaultPages, anchor))
         // A larger font or first-line indent moves line breaks; the anchor still selects its own page.
         val largerPages = listOf(ReaderPage(emptyList(), -1f), ReaderPage(listOf(line(1, 0)), 1f),
             ReaderPage(listOf(line(3, 0)), 3f), ReaderPage(listOf(line(3, 3)), 3.3f), ReaderPage(listOf(line(3, 8)), 3.8f))
-        assertEquals(3, readerPageIndexForAnchor(largerPages, anchor) { it })
-        // Page starts are display offsets; a longer replacement name must be mapped back to source.
+        assertEquals(3, readerPageIndexForAnchor(largerPages, anchor))
+        // Map the saved offset into display text before comparing it with page starts.
         val display = displayed(document.blocks[1])
         val nameAnchor = ReaderAnchor(key, fingerprint, 1, source.indexOf('說'))
         val replacedPages = listOf(ReaderPage(emptyList(), -1f), ReaderPage(listOf(line(1, 0)), 1f),
             ReaderPage(listOf(line(1, display.text.indexOf('说'))), 1.5f), ReaderPage(listOf(line(1, display.text.indexOf('很'))), 1.8f))
-        assertEquals(2, readerPageIndexForAnchor(replacedPages, nameAnchor, display::toSource))
+        assertEquals(2, readerPageIndexForAnchor(replacedPages, nameAnchor, display))
         // Comparing display page starts with the source offset would land one page early.
-        assertEquals(1, readerPageIndexForAnchor(replacedPages, nameAnchor) { it })
-        assertEquals(0, readerPageIndexForAnchor(listOf(null, null), anchor) { it })
+        assertEquals(1, readerPageIndexForAnchor(replacedPages, nameAnchor))
+        assertEquals(0, readerPageIndexForAnchor(listOf(null, null), anchor))
+    }
+
+    @Test
+    fun pageAnchorInsideRemovedIndentFindsItsOwnLine() {
+        val text = "第一行\n　　第二行"
+        val offsets = requireNotNull(readerUnindentedOffsets(text))
+        val pages = listOf(ReaderPage(listOf(line(1, 0)), 1f),
+            ReaderPage(listOf(line(1, offsets.text.indexOf('第', 1))), 1.5f))
+        val anchor = ReaderAnchor(key, fingerprint, 1, text.indexOf('　'))
+        assertEquals(1, readerPageIndexForAnchor(pages, anchor, offsets))
     }
 
     @Test
@@ -115,8 +126,8 @@ class ReaderBookmarkPositionTest {
         val pages = listOf(ReaderPage(listOf(line(1, 0)), 1f),
             ReaderPage(listOf(line(1, 5)), 1.5f),
             ReaderPage(listOf(ReaderPageSegment.Divider(1, 10)), 1.999f))
-        assertEquals(1, readerPageIndexForAnchor(pages, ReaderAnchor(key, fingerprint, 1, 7)) { it })
-        assertEquals(2, readerPageIndexForAnchor(pages, ReaderAnchor(key, fingerprint, 1, 10)) { it })
+        assertEquals(1, readerPageIndexForAnchor(pages, ReaderAnchor(key, fingerprint, 1, 7)))
+        assertEquals(2, readerPageIndexForAnchor(pages, ReaderAnchor(key, fingerprint, 1, 10)))
     }
 
     @Test

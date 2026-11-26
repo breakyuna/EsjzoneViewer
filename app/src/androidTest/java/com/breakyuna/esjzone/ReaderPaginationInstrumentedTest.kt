@@ -18,7 +18,6 @@ import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.paginateReaderChapter
-import com.breakyuna.esjzone.ui.reader.readerIndentLayout
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -138,13 +137,14 @@ class ReaderPaginationInstrumentedTest {
     }
 
     @Test
-    fun mixedSourceIndentsKeepHardLinesAndOffsetsAcrossPages() {
+    fun mixedSourceIndentsUseReaderIndentAcrossPages() {
         val density = Density(1f)
         val measurer = TextMeasurer(
             createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
             density, LayoutDirection.Ltr)
         val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, textIndent = TextIndent(firstLine = 36.sp))
-        val source = "　　第一行\n第二行\n　　第三行"
+        val source = "　　第一行\n第二行\n \t\u00a0第三 行"
+        val displayed = "第一行\n第二行\n第三 行"
         val width = 220
         val pages = paginateReaderChapter(
             "标题", listOf(ReaderBlock.Text(source)), ReaderSettings(paragraphSpacingDp = 0f),
@@ -153,28 +153,29 @@ class ReaderPaginationInstrumentedTest {
         val textPages = pages.map { it.segments.filterIsInstance<ReaderPageSegment.TextLine>() }.filter { it.isNotEmpty() }
         val fragments = textPages.flatten()
         assertTrue(textPages.size > 1)
-        assertEquals(source, fragments.joinToString("") { it.text.text })
+        assertEquals(displayed, fragments.joinToString("") { it.text.text })
 
         val lineStarts = fragments.flatMap { segment ->
             val segmentStyle = requireNotNull(segment.paragraphStyle)
-            val layout = measurer.measure(readerIndentLayout(segment.text, segmentStyle), segmentStyle,
+            val layout = measurer.measure(segment.text, segmentStyle,
                 maxLines = segment.maxLines, constraints = Constraints(maxWidth = width))
             List(layout.lineCount) { line ->
                 segment.startOffset + layout.getLineStart(line) to layout.getLineLeft(line).toInt()
             }
         }
-        assertEquals(listOf(0 to 0, source.indexOf('\n') + 1 to 36,
-            source.lastIndexOf('\n') + 1 to 0), lineStarts)
+        assertEquals(listOf(0 to 36, displayed.indexOf('\n') + 1 to 36,
+            displayed.lastIndexOf('\n') + 1 to 36), lineStarts)
     }
 
     @Test
-    fun uniformSourceIndentsDoNotAddTrailingBlankLinesAcrossPageBreaks() {
+    fun zeroReaderIndentRemovesSourceIndentsWithoutAddingBlankLinesAcrossPages() {
         val density = Density(1f)
         val measurer = TextMeasurer(
             createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
             density, LayoutDirection.Ltr)
-        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, textIndent = TextIndent(firstLine = 36.sp))
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, textIndent = TextIndent.None)
         val source = "　　第一行\n　　第二行\n　　第三行"
+        val displayed = "第一行\n第二行\n第三行"
         val width = 220
         val pages = paginateReaderChapter(
             "标题", listOf(ReaderBlock.Text(source)), ReaderSettings(paragraphSpacingDp = 0f),
@@ -184,18 +185,18 @@ class ReaderPaginationInstrumentedTest {
         val fragments = textPages.flatMap { it.segments }.filterIsInstance<ReaderPageSegment.TextLine>()
         assertEquals(2, textPages.size)
         assertTrue(textPages.none { it.isOversized })
-        assertEquals(source, fragments.joinToString("") { it.text.text })
+        assertEquals(displayed, fragments.joinToString("") { it.text.text })
 
         val lineStarts = fragments.flatMap { segment ->
             val segmentStyle = requireNotNull(segment.paragraphStyle)
-            val layout = measurer.measure(readerIndentLayout(segment.text, segmentStyle), segmentStyle,
+            val layout = measurer.measure(segment.text, segmentStyle,
                 maxLines = segment.maxLines, constraints = Constraints(maxWidth = width))
             List(layout.lineCount) { line ->
                 segment.startOffset + layout.getLineStart(line) to layout.getLineLeft(line).toInt()
             }
         }
-        assertEquals(listOf(0 to 0, source.indexOf('\n') + 1 to 0,
-            source.lastIndexOf('\n') + 1 to 0), lineStarts)
+        assertEquals(listOf(0 to 0, displayed.indexOf('\n') + 1 to 0,
+            displayed.lastIndexOf('\n') + 1 to 0), lineStarts)
     }
 
     @Test

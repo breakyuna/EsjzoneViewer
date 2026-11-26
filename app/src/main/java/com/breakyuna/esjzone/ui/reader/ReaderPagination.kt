@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.CompositionLocalProvider
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterFormatting
 import com.breakyuna.esjzone.domain.reader.ReaderLink
+import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.R
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 
@@ -111,17 +113,18 @@ internal fun paginateReaderChapter(
         paragraphStyle: TextStyle, alignment: String?, paragraphSpacing: Dp) {
         val paragraphGap = with(density) { paragraphSpacing.roundToPx() }
         if (text.isEmpty()) {
-            add(ReaderPageSegment.Gap(paragraphSpacing), paragraphGap, blockIndex.toFloat())
+            val gap = if (blocks[blockIndex].sourceText().isBlank()) blankLineHeight + paragraphSpacing
+                else paragraphSpacing
+            add(ReaderPageSegment.Gap(gap), with(density) { gap.roundToPx() }, blockIndex.toFloat())
             return
         }
         val layoutStyle = readerRubyParagraphStyle(blocks[blockIndex], paragraphStyle, inline,
             textMeasurer, density, textTransform)
-        val layoutText = readerIndentLayout(text, layoutStyle)
         checkCancelled()
         val layout = textMeasurer.measure(
-            text = layoutText,
+            text = text,
             style = layoutStyle,
-            placeholders = placeholders(layoutText, inline),
+            placeholders = placeholders(text, inline),
             constraints = Constraints(maxWidth = widthPx)
         )
         val signature = ReaderUnderlines.signature(blocks[blockIndex], text.text)
@@ -165,18 +168,17 @@ internal fun paginateReaderChapter(
                 checkCancelled()
                 val end = layout.getLineEnd(endLine - 1)
                 segmentText = text.subSequence(start, end)
-                val displayText = readerIndentLayout(segmentText, fragmentStyle)
-                val ranges = placeholders(displayText, inline)
+                val ranges = placeholders(segmentText, inline)
                 val constraints = Constraints(maxWidth = widthPx)
                 val fragment = textMeasurer.measure(
-                    displayText, fragmentStyle, placeholders = ranges, constraints = constraints
+                    segmentText, fragmentStyle, placeholders = ranges, constraints = constraints
                 )
                 val lastLine = fragment.lineCount - 1
                 // Keep the newline in the source slice and omit the empty layout line created by cutting there.
                 maxLines = if (endLine < layout.lineCount && lastLine > 0 &&
                     fragment.getLineStart(lastLine) == segmentText.length) lastLine else Int.MAX_VALUE
                 lineHeight = if (maxLines == Int.MAX_VALUE) fragment.size.height else textMeasurer.measure(
-                    displayText, fragmentStyle, maxLines = maxLines, placeholders = ranges, constraints = constraints
+                    segmentText, fragmentStyle, maxLines = maxLines, placeholders = ranges, constraints = constraints
                 ).size.height
                 if (usedHeight + lineHeight <= heightPx) break
                 if (endLine == startLine + 1) break
@@ -205,14 +207,13 @@ internal fun paginateReaderChapter(
     ).size.height + with(density) { (settings.paragraphSpacingDp + 8f).dp.roundToPx() }
     add(ReaderPageSegment.Heading(chapterName), headingHeight, -1f)
 
-    fun addDivider(blockIndex: Int, afterBlock: Boolean) {
+    fun addDivider(blockIndex: Int, offset: Int) {
         if (blocks.isEmpty()) return
         val index = blockIndex.coerceIn(0, blocks.lastIndex)
-        val offset = if (afterBlock) blocks[index].renderedReaderText(textTransform).length else 0
-        val position = index + if (afterBlock && offset > 0) 0.999f else 0f
+        val position = index + if (offset > 0) 0.999f else 0f
         add(ReaderPageSegment.Divider(index, offset), with(density) { ReaderHorizontalRuleHeight.roundToPx() }, position)
     }
-    repeat(formatting.dividersAt.count { it == 0 }) { addDivider(0, afterBlock = false) }
+    repeat(formatting.dividersAt.count { it == 0 }) { addDivider(0, 0) }
     blocks.forEachIndexed { blockIndex, block ->
         checkCancelled()
         val alignment = formatting.alignments[blockIndex]
@@ -220,16 +221,19 @@ internal fun paginateReaderChapter(
         val paragraphSpacing = settings.paragraphSpacingBefore(
             blocks.getOrNull(blockIndex + 1), blankLineHeight, blockIndex + 1 in formatting.dividersAt
         )
+        var displayedLength = 0
         when {
             block.isBlankLine() ->
                 add(ReaderPageSegment.Gap(blankLineHeight), blankLineHeightPx, blockIndex.toFloat())
             block is ReaderBlock.Paragraph -> {
                 val (text, inline) = block.toAnnotatedReaderParagraph(paragraphStyle, textMeasurer, density,
                     textTransform, formatting.disclosureTitleParts[blockIndex], checkCancelled)
+                displayedLength = text.length
                 addText(text, inline, blockIndex, paragraphStyle, alignment, paragraphSpacing)
             }
             block is ReaderBlock.Text -> {
                 val (text, inline) = block.toAnnotatedReaderText(paragraphStyle, textMeasurer, density, textTransform)
+                displayedLength = text.length
                 addText(text, inline, blockIndex, paragraphStyle, alignment, paragraphSpacing)
             }
             block is ReaderBlock.Image -> {
@@ -237,7 +241,7 @@ internal fun paginateReaderChapter(
                 pages += ReaderPage(listOf(ReaderPageSegment.Image(block.url)), blockIndex.toFloat())
             }
         }
-        repeat(formatting.dividersAt.count { it == blockIndex + 1 }) { addDivider(blockIndex, afterBlock = true) }
+        repeat(formatting.dividersAt.count { it == blockIndex + 1 }) { addDivider(blockIndex, displayedLength) }
     }
     flush()
     return pages
@@ -323,7 +327,7 @@ internal fun ReaderPageContent(
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
         LocalContentColor provides contentColor) {
         Box {
-            if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else ReaderSelectionContainer(content)
+            if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer(content = content)
             ReaderUnderlineMagnifier(underlineSelection, Modifier.matchParentSize())
         }
     }

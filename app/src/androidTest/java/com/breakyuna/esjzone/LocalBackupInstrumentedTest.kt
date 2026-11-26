@@ -243,12 +243,18 @@ class LocalBackupInstrumentedTest {
                 ReaderNameReplaceRule(source = "A([0-9])", target = "B$1", bookKey = "book-1", regex = true),
                 ReaderNameReplaceRule(source = "", target = "", bookKey = "book-2")
             ))
-            val legacySettings = com.google.gson.JsonObject().apply { addProperty("first_line_indent", true) }
+            val legacySettings = com.google.gson.JsonObject().apply {
+                addProperty("first_line_indent", true)
+                add("book_first_line_indent_chars", com.google.gson.JsonObject().apply {
+                    addProperty("book-1", 0)
+                })
+            }
             reader.restoreBackup(reader.decodeBackup(legacySettings), photoName = null)
-            reader.save(settings.copy(firstLineIndentChars = 0))
-            reader.saveBookIndentInBackground("book-1", 2)
-            reader.saveBookIndentInBackground("book-2", 0)
-            reader.saveBookIndentInBackground("book-1", 1)
+            assertEquals(2, reader.backupSnapshot().first.get("first_line_indent_chars").asInt)
+            legacySettings.addProperty("first_line_indent_chars", 1)
+            reader.restoreBackup(reader.decodeBackup(legacySettings), photoName = null)
+            assertEquals(2, reader.backupSnapshot().first.get("first_line_indent_chars").asInt)
+            reader.save(settings)
             reader.saveImageBackground(appearance)
             reader.saveNameReplaceSettings(names)
             val selected = setOf(BackupCategory.READER_SETTINGS)
@@ -256,8 +262,6 @@ class LocalBackupInstrumentedTest {
 
             source.delete()
             reader.save(ReaderSettings())
-            reader.saveBookIndentInBackground("book-1", 2)
-            reader.saveBookIndentInBackground("book-3", 1)
             reader.saveNameReplaceSettings(ReaderNameReplaceSettings())
             app.setAdult(false)
             withTimeout(5_000) { app.adult.first { !it } }
@@ -269,12 +273,9 @@ class LocalBackupInstrumentedTest {
             assertArrayEquals(bytes, requireNotNull(ReaderImageBackgroundStore.file(context, restoredPhoto)).readBytes())
             assertEquals(settings.copy(background = ReaderBackground.CUSTOM_IMAGE),
                 withTimeout(5_000) { reader.settings.first { it.fontSizeSp == 24f } })
-            val bookIndents = mapOf("book-1" to 1, "book-2" to 0)
-            assertEquals(bookIndents, withTimeout(5_000) { reader.bookIndents.first { it == bookIndents } })
             val (snapshot, _) = reader.backupSnapshot()
             assertEquals(2, snapshot.get("first_line_indent_chars").asInt)
-            assertEquals(bookIndents, snapshot.getAsJsonObject("book_first_line_indent_chars")
-                .entrySet().associate { (bookKey, chars) -> bookKey to chars.asInt })
+            assertFalse(snapshot.has("book_first_line_indent_chars"))
             assertEquals(names, withTimeout(5_000) { reader.nameReplaceSettings.first { it.enabled } })
             assertFalse(app.adult.value)
         } finally {

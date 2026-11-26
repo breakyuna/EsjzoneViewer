@@ -1,20 +1,11 @@
 package com.breakyuna.esjzone.ui.reader
 
-import android.content.ClipData
-import android.text.SpannableStringBuilder
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.Clipboard
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
@@ -65,9 +56,9 @@ fun DetailedChapter.toReaderDocument(chapter: Chapter): ReaderChapterDocument {
     )
 }
 
-/** Ruby inline content retains its base text as the annotated string's alternate text. */
-internal fun ReaderBlock.renderedReaderText(textTransform: (String) -> String): String = when (this) {
-    is ReaderBlock.Paragraph -> parts.joinToString("") { it.renderedReaderText(textTransform) }
+/** Text used in signatures saved before line indents were removed. */
+internal fun ReaderBlock.untrimmedReaderText(textTransform: (String) -> String): String = when (this) {
+    is ReaderBlock.Paragraph -> parts.joinToString("") { textTransform(it.value) }
     is ReaderBlock.Text -> textTransform(value)
     else -> ""
 }
@@ -80,72 +71,6 @@ internal fun ReaderBlock.isBlankLine(): Boolean = when (this) {
 }
 
 private fun ReaderBlock.Text.isPlainBlank(): Boolean = value.isBlank() && ruby == null && styles.isEmpty()
-
-private const val READER_INDENT_LINE_SEPARATOR = '\u2028'
-
-/** Suppress setting-driven indentation only on hard lines that already have a source indent. */
-internal fun readerIndentLayout(text: AnnotatedString, style: ComposeTextStyle): AnnotatedString {
-    val indent = style.textIndent ?: return text
-    if (indent == TextIndent.None || text.paragraphStyles.isNotEmpty() || '\u3000' !in text.text) return text
-
-    fun hasIndent(start: Int): Boolean {
-        var index = start
-        while (index < text.length) {
-            val char = text[index++]
-            if (char == '\u3000') return true
-            if (char == '\n' || !char.isWhitespace()) return false
-        }
-        return false
-    }
-
-    val builder = AnnotatedString.Builder()
-    var runStart = 0
-    var indented = hasIndent(0)
-    val noIndent = ParagraphStyle(textIndent = TextIndent.None)
-    var newline = text.text.indexOf('\n')
-    while (newline in 0 until text.lastIndex) {
-        val nextIndented = hasIndent(newline + 1)
-        if (nextIndented != indented) {
-            builder.append(text, runStart, newline)
-            // A style boundary already ends the line. Keep one UTF-16 character
-            // for the separator without adding Android's trailing empty line for LF.
-            builder.append(READER_INDENT_LINE_SEPARATOR)
-            if (indented) builder.addStyle(noIndent, runStart, newline + 1)
-            runStart = newline + 1
-            indented = nextIndented
-        }
-        newline = text.text.indexOf('\n', newline + 1)
-    }
-    if (runStart == 0 && !indented) return text
-    builder.append(text, runStart, text.length)
-    if (indented) builder.addStyle(noIndent, runStart, text.length)
-    return builder.toAnnotatedString()
-}
-
-@Composable
-internal fun ReaderSelectionContainer(content: @Composable () -> Unit) {
-    val clipboard = LocalClipboard.current
-    val readerClipboard = remember(clipboard) {
-        object : Clipboard by clipboard {
-            override suspend fun setClipEntry(clipEntry: ClipEntry?) {
-                val data = clipEntry?.clipData
-                val text = data?.takeIf { it.itemCount == 1 }?.getItemAt(0)?.text
-                if (data != null && text != null && READER_INDENT_LINE_SEPARATOR in text) {
-                    val restored = SpannableStringBuilder(text)
-                    for (index in text.indices) {
-                        if (text[index] == READER_INDENT_LINE_SEPARATOR) restored.replace(index, index + 1, "\n")
-                    }
-                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(data.description.label, restored)))
-                } else {
-                    clipboard.setClipEntry(clipEntry)
-                }
-            }
-        }
-    }
-    CompositionLocalProvider(LocalClipboard provides readerClipboard) {
-        SelectionContainer(content = content)
-    }
-}
 
 /** A following blank line already supplies separation unless a divider comes first. */
 internal fun ReaderSettings.paragraphSpacingBefore(
@@ -167,12 +92,14 @@ internal fun ReaderBlock.Paragraph.toAnnotatedReaderParagraph(
     checkCancelled: () -> Unit = {}
 ): Pair<AnnotatedString, Map<String, InlineTextContent>> {
     val inline = linkedMapOf<String, InlineTextContent>()
+    val lineIndent = ReaderLineIndent()
     val text = buildAnnotatedString {
         var titleEnd = 0
         parts.forEachIndexed { index, part ->
             checkCancelled()
             val (value, content) = part.toAnnotatedReaderText(
-                style, textMeasurer, density, textTransform, inlineKey = "reader-ruby-$index"
+                style, textMeasurer, density, textTransform, inlineKey = "reader-ruby-$index",
+                lineIndent = lineIndent
             )
             append(value)
             inline.putAll(content)
@@ -201,9 +128,12 @@ internal fun ReaderBlock.Text.toAnnotatedReaderText(
     textMeasurer: TextMeasurer,
     density: Density,
     textTransform: (String) -> String,
-    inlineKey: String = "reader-ruby"
+    inlineKey: String = "reader-ruby",
+    lineIndent: ReaderLineIndent = ReaderLineIndent()
 ): Pair<AnnotatedString, Map<String, InlineTextContent>> {
-    val displayed = textTransform(value)
+    val displayed = lineIndent.trim(textTransform(value))
+    if (displayed.isEmpty()) return AnnotatedString("") to emptyMap()
+
     val span = styles.fold(SpanStyle()) { current, style ->
         current.merge(style.toSpanStyle())
     }
@@ -213,8 +143,6 @@ internal fun ReaderBlock.Text.toAnnotatedReaderText(
             withStyle(span) { append(displayed) }
         } to emptyMap()
     }
-
-    if (displayed.isEmpty()) return AnnotatedString("") to emptyMap()
 
     // A ruby is inline within a paragraph; the paragraph's first-line indent
     // and alignment must not be applied a second time inside the placeholder.
