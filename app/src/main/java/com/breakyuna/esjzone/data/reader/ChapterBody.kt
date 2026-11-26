@@ -109,7 +109,7 @@ data class ChapterBody(
             previous == current || previous.type == current.type && previous.image == current.image &&
                 previous.textWithoutWhitespace() == current.textWithoutWhitespace()
         }
-        val layout = if (sameLayout) keepSavedAlignments(formatting) else formatting
+        val layout = if (sameLayout) keepSavedAlignments(formatting) else keepSplitAlignments(rebuilt, formatting)
         val upgraded = copy(parserVersion = CURRENT_PARSER_VERSION, formatting = layout)
         if (rebuilt == blocks) return upgraded
         val newFingerprint = digest(rebuilt)
@@ -128,10 +128,51 @@ data class ChapterBody(
             previous.parserVersion < parserVersion -> previous.legacyPositionsFor(blocks)
             previous.legacyPositions != null &&
                 blocks.joinToString("") { it.textWithoutWhitespace() } ==
-                previous.blocks.joinToString("") { it.textWithoutWhitespace() } -> previous.legacyPositions
+                previous.blocks.joinToString("") { it.textWithoutWhitespace() } -> {
+                val imageIndices = previous.imageBlockIndicesIn(blocks)
+                val legacy = previous.legacyPositions
+                val remappedImages = legacy.imageBlocks?.mapNotNull { (oldIndex, previousIndex) ->
+                    imageIndices[previousIndex]?.let { oldIndex to it }
+                }?.toMap()?.takeIf { it.isNotEmpty() }
+                if (legacy.textBlocks.isEmpty() && remappedImages == null) null
+                else legacy.copy(imageBlocks = remappedImages)
+            }
             else -> null
         }
         return if (positions == null) this else copy(legacyPositions = positions)
+    }
+
+    private fun keepSplitAlignments(rebuilt: List<StoredBlock>, layout: ReaderChapterFormatting): ReaderChapterFormatting {
+        val saved = savedAlignments()
+        if (saved.isEmpty()) return layout
+        val oldText = blocks.map { it.textWithoutWhitespace() }
+        val newText = rebuilt.map { it.textWithoutWhitespace() }
+        if (oldText.joinToString("") != newText.joinToString("")) return layout
+
+        // A new paragraph inherits a saved alignment only if it fits wholly in one old block.
+        var oldIndex = 0
+        var oldEnd = oldText.firstOrNull()?.length ?: 0
+        var newStart = 0
+        val alignments = buildMap {
+            newText.forEachIndexed { newIndex, text ->
+                if (text.isEmpty()) return@forEachIndexed
+                while (oldEnd <= newStart) {
+                    oldIndex++
+                    oldEnd += oldText[oldIndex].length
+                }
+                newStart += text.length
+                if (newStart <= oldEnd) saved[oldIndex]?.let { put(newIndex, it) }
+            }
+        }
+        return layout.copy(alignments = alignments + layout.alignments)
+    }
+
+    private fun imageBlockIndicesIn(rebuilt: List<StoredBlock>): Map<Int, Int> {
+        val oldImages = blocks.withIndex().filter { it.value.type == "image" }
+        val newImages = rebuilt.withIndex().filter { it.value.type == "image" }
+        if (oldImages.map { it.value.image } != newImages.map { it.value.image }) return emptyMap()
+        return oldImages.asSequence().zip(newImages.asSequence()) { old, new -> old.index to new.index }
+            .take(BoundedJson.MAX_ITEMS).toMap()
     }
 
     private fun legacyPositionsFor(rebuilt: List<StoredBlock>): ReaderLegacyPositions? {
@@ -170,11 +211,12 @@ data class ChapterBody(
                 if (size == BoundedJson.MAX_ITEMS) break
             }
         }
-        return positions.takeIf { it.isNotEmpty() }?.let { ReaderLegacyPositions(fingerprint, it) }
+        val images = imageBlockIndicesIn(rebuilt).takeIf { it.isNotEmpty() }
+        return if (positions.isEmpty() && images == null) null else ReaderLegacyPositions(fingerprint, positions, images)
     }
 
     companion object {
-        internal const val CURRENT_PARSER_VERSION = 3
+        internal const val CURRENT_PARSER_VERSION = 4
         private val gson = Gson()
         fun from(components: List<Component>): ChapterBody = fromBlocks(components.flatMap(Component::toReaderBlocks))
         fun fromBlocks(blocks: List<ReaderBlock>): ChapterBody {

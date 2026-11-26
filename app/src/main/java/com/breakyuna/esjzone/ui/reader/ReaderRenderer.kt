@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
@@ -199,7 +198,7 @@ fun ReaderBlocks(
     }
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
         LocalReaderUnderlineChapter provides chapterKey, LocalContentColor provides contentColor) {
-        if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer { content() }
+        if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else ReaderSelectionContainer(content)
     }
 }
 
@@ -328,7 +327,7 @@ internal fun readerParagraphStyle(style: TextStyle, alignment: String?): TextSty
         else -> return style
     }
     return style.copy(textAlign = textAlign,
-        textIndent = if (alignment in setOf("center", "right", "end")) TextIndent.None else style.textIndent)
+        textIndent = if (alignment == "center" || alignment == "right" || alignment == "end") TextIndent.None else style.textIndent)
 }
 
 internal val ReaderHorizontalRuleHeight = 17.dp

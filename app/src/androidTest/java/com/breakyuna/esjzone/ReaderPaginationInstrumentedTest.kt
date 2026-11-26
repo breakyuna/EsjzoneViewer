@@ -18,6 +18,7 @@ import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.ui.reader.ReaderPageSegment
 import com.breakyuna.esjzone.ui.reader.ReaderSettings
 import com.breakyuna.esjzone.ui.reader.paginateReaderChapter
+import com.breakyuna.esjzone.ui.reader.readerIndentLayout
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -94,7 +95,8 @@ class ReaderPaginationInstrumentedTest {
                             (settings.paragraphSpacingDp + 8f).dp.roundToPx()
                         }
                         is ReaderPageSegment.TextLine -> measurer.measure(
-                            segment.text, style, constraints = Constraints(maxWidth = width)
+                            segment.text, style, maxLines = segment.maxLines,
+                            constraints = Constraints(maxWidth = width)
                         ).size.height + with(density) { segment.bottomSpacing.roundToPx() }
                         is ReaderPageSegment.Gap -> with(density) { segment.height.roundToPx() }
                         is ReaderPageSegment.Image -> error("No images in this fixture")
@@ -133,6 +135,67 @@ class ReaderPaginationInstrumentedTest {
         val continuedLayout = measurer.measure(continuation.text, requireNotNull(continuation.paragraphStyle),
             maxLines = continuation.maxLines, constraints = Constraints(maxWidth = width))
         assertTrue(continuedLayout.getLineStart(continuedLayout.lineCount - 1) < continuation.text.length)
+    }
+
+    @Test
+    fun mixedSourceIndentsKeepHardLinesAndOffsetsAcrossPages() {
+        val density = Density(1f)
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
+            density, LayoutDirection.Ltr)
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, textIndent = TextIndent(firstLine = 36.sp))
+        val source = "　　第一行\n第二行\n　　第三行"
+        val width = 220
+        val pages = paginateReaderChapter(
+            "标题", listOf(ReaderBlock.Text(source)), ReaderSettings(paragraphSpacingDp = 0f),
+            style, style.copy(textIndent = TextIndent.None), measurer, density, width, 60, { it }
+        )
+        val textPages = pages.map { it.segments.filterIsInstance<ReaderPageSegment.TextLine>() }.filter { it.isNotEmpty() }
+        val fragments = textPages.flatten()
+        assertTrue(textPages.size > 1)
+        assertEquals(source, fragments.joinToString("") { it.text.text })
+
+        val lineStarts = fragments.flatMap { segment ->
+            val segmentStyle = requireNotNull(segment.paragraphStyle)
+            val layout = measurer.measure(readerIndentLayout(segment.text, segmentStyle), segmentStyle,
+                maxLines = segment.maxLines, constraints = Constraints(maxWidth = width))
+            List(layout.lineCount) { line ->
+                segment.startOffset + layout.getLineStart(line) to layout.getLineLeft(line).toInt()
+            }
+        }
+        assertEquals(listOf(0 to 0, source.indexOf('\n') + 1 to 36,
+            source.lastIndexOf('\n') + 1 to 0), lineStarts)
+    }
+
+    @Test
+    fun uniformSourceIndentsDoNotAddTrailingBlankLinesAcrossPageBreaks() {
+        val density = Density(1f)
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
+            density, LayoutDirection.Ltr)
+        val style = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, textIndent = TextIndent(firstLine = 36.sp))
+        val source = "　　第一行\n　　第二行\n　　第三行"
+        val width = 220
+        val pages = paginateReaderChapter(
+            "标题", listOf(ReaderBlock.Text(source)), ReaderSettings(paragraphSpacingDp = 0f),
+            style, style.copy(textIndent = TextIndent.None), measurer, density, width, 60, { it }
+        )
+        val textPages = pages.filter { page -> page.segments.any { it is ReaderPageSegment.TextLine } }
+        val fragments = textPages.flatMap { it.segments }.filterIsInstance<ReaderPageSegment.TextLine>()
+        assertEquals(2, textPages.size)
+        assertTrue(textPages.none { it.isOversized })
+        assertEquals(source, fragments.joinToString("") { it.text.text })
+
+        val lineStarts = fragments.flatMap { segment ->
+            val segmentStyle = requireNotNull(segment.paragraphStyle)
+            val layout = measurer.measure(readerIndentLayout(segment.text, segmentStyle), segmentStyle,
+                maxLines = segment.maxLines, constraints = Constraints(maxWidth = width))
+            List(layout.lineCount) { line ->
+                segment.startOffset + layout.getLineStart(line) to layout.getLineLeft(line).toInt()
+            }
+        }
+        assertEquals(listOf(0 to 0, source.indexOf('\n') + 1 to 0,
+            source.lastIndexOf('\n') + 1 to 0), lineStarts)
     }
 
     @Test

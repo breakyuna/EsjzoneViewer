@@ -57,10 +57,15 @@ data class ReaderAnchor(
         if (kind == "end") {
             return copy(fingerprint = document.contentFingerprint)
         }
+        val legacy = document.legacyPositions?.takeIf { it.fingerprint == fingerprint }
+        if (kind == "image") {
+            val imageIndex = legacy?.imageBlocks?.get(blockIndex) ?: return null
+            if (document.blocks.getOrNull(imageIndex) !is ReaderBlock.Image) return null
+            return copy(fingerprint = document.contentFingerprint, blockIndex = imageIndex)
+        }
         if (kind != "text") return null
 
-        val oldBlock = document.legacyPositions?.takeIf { it.fingerprint == fingerprint }
-            ?.textBlocks?.get(blockIndex)
+        val oldBlock = legacy?.textBlocks?.get(blockIndex)
         if (oldBlock == null && textQuote.isNullOrBlank()) return null
         val stream = document.normalizedTextIndex
         if (stream.text.isEmpty()) return null
@@ -146,10 +151,11 @@ data class ReaderAnchor(
     }
 }
 
-/** Positions from the saved body before re-parsing, in the new body's normalized text. */
+/** Positions from the saved body before re-parsing. */
 data class ReaderLegacyPositions(
     val fingerprint: String,
-    val textBlocks: Map<Int, ReaderLegacyTextBlock>
+    val textBlocks: Map<Int, ReaderLegacyTextBlock>,
+    val imageBlocks: Map<Int, Int>? = null
 ) : Serializable
 
 data class ReaderLegacyTextBlock(

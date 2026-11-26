@@ -1,5 +1,9 @@
 package com.breakyuna.esjzone
 
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.sp
 import com.breakyuna.esjzone.data.reader.ChapterBody
 import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.data.reader.withFormatting
@@ -11,6 +15,8 @@ import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderUnderlines
 import com.breakyuna.esjzone.domain.reader.sourceText
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
+import com.breakyuna.esjzone.ui.reader.readerChapterLinks
+import com.breakyuna.esjzone.ui.reader.readerIndentLayout
 import com.google.gson.Gson
 import org.jsoup.Jsoup
 import org.junit.Assert.*
@@ -64,6 +70,112 @@ class ChapterFormattingTest {
         assertEquals(listOf("\n\n第一段\n第二段", "作者的话附言"), parsed.blocks.map { it.sourceText() })
         assertEquals(listOf(ReaderBlock.LineBreak),
             analyseChapterContent(Jsoup.parseBodyFragment("<p><br></p>").body()).blocks)
+    }
+
+    @Test fun anonymousIndentedProseKeepsParagraphsBlankLinesAndInlineLinks() {
+        val html = "<br>\n<br>\n　　第一段。<br>\n　　<a href='/detail/2.html'>第二段</a>。" +
+            "<br>\n<br>\n<br>\n<br>\n　　第三段。<br>同一段续行。" +
+            "<details><summary>作者的话</summary>附言</details>"
+        val document = Jsoup.parseBodyFragment(html, "https://www.esjzone.cc/forum/1/2.html")
+        document.outputSettings().prettyPrint(false)
+        val container = document.body()
+        val parsed = analyseChapterContent(container)
+
+        assertFalse(parsed.degraded)
+        assertEquals(listOf("\n", "\n", "　　第一段。", "　　第二段。", "\n", "\n", "\n",
+            "　　第三段。\n同一段续行。", "作者的话附言"), parsed.blocks.map { it.sourceText() })
+        assertEquals(mapOf(8 to 1), parsed.formatting.disclosureTitleParts)
+        assertEquals(listOf(9), parsed.formatting.dividersAt)
+        val links = readerChapterLinks(parsed.blocks, container.html(), "https://www.esjzone.cc/forum/1/2.html")
+        val link = links.getValue(3).single()
+        assertEquals(2, link.start)
+        assertEquals(5, link.end)
+        assertEquals("https://www.esjzone.cc/detail/2.html", link.url)
+    }
+
+    @Test fun anonymousFlowHandlesCommentsTrailingBreaksAndTrimmedWhitespaceNodes() {
+        val html = "<a href='/detail/2.html'>第一段</a> \n<br><br>　　<!-- 译注 --><span>第二段</span><br><br>" +
+            "<details><summary>注</summary>附言</details>"
+        val parsed = analyseChapterContent(Jsoup.parseBodyFragment(html, "https://www.esjzone.cc/forum/1/2.html").body())
+
+        assertFalse(parsed.degraded)
+        assertEquals(listOf("第一段", "\n", "　　第二段", "\n", "注附言"), parsed.blocks.map { it.sourceText() })
+        val first = parsed.blocks.first() as ReaderBlock.Paragraph
+        assertEquals(listOf("第一段"), first.parts.map { it.value })
+    }
+
+    @Test fun explicitParagraphKeepsItsHardBreaks() {
+        val html = "<p>第一行<br>　　第二行<br><br>空行后正文。</p>"
+        val parsed = analyseChapterContent(Jsoup.parseBodyFragment(html).body())
+        assertEquals(listOf("第一行\n　　第二行\n\n空行后正文。"), parsed.blocks.map { it.sourceText() })
+    }
+
+    @Test fun previouslyMergedChapterRestoresAnAnchorInsideASeparatedParagraph() {
+        val key = "/forum/1/2.html"
+        val html = "<br>\n　　第一段。<br>\n<br>\n　　第二段的书签位置。"
+        val old = body(html).copy(parserVersion = 3)
+        val oldOffset = old.readerBlocks().single().sourceText().indexOf("书签位置")
+        val saved = ReaderAnchor(key, old.fingerprint, 0, oldOffset)
+
+        val rebuilt = old.rebuildFromHtmlIfOutdated(html, "https://www.esjzone.cc$key").validate()
+        val document = ReaderChapterDocument(ReaderChapterRef("章节", key), rebuilt.readerBlocks(),
+            contentFingerprint = rebuilt.fingerprint, legacyPositions = rebuilt.legacyPositions)
+        val resolved = requireNotNull(saved.resolveIn(key, document))
+
+        assertEquals(ChapterBody.CURRENT_PARSER_VERSION, rebuilt.parserVersion)
+        assertEquals(3, resolved.blockIndex)
+        assertEquals("书签位置。", document.blocks[resolved.blockIndex].sourceText().substring(resolved.offset))
+    }
+
+    @Test fun splitSnapshotPreservesOuterAlignmentAndKeepsExplicitAlignment() {
+        val html = "甲<br><br>乙<p style='text-align: right'>尾声</p>"
+        val old = body(html).copy(parserVersion = 3,
+            formatting = ReaderChapterFormatting(alignments = mapOf(0 to "center", 1 to "center")))
+
+        val rebuilt = old.rebuildFromHtmlIfOutdated(html, "https://www.esjzone.cc/forum/1/2.html").validate()
+
+        assertEquals(listOf("甲", "\n", "乙", "尾声"), rebuilt.readerBlocks().map { it.sourceText() })
+        assertEquals(mapOf(0 to "center", 2 to "center", 3 to "right"), rebuilt.formatting!!.alignments)
+    }
+
+    @Test fun splitSnapshotRestoresTheSameImageAndItsIntraImageOffset() {
+        val key = "/forum/1/2.html"
+        val html = "甲<br><br>乙<img src='/same.png'><p>丙<img src='/same.png'></p>"
+        val old = body(html).copy(parserVersion = 3)
+        val saved = ReaderAnchor(key, old.fingerprint, old.readerBlocks().indexOfLast { it is ReaderBlock.Image },
+            kind = "image", fraction = 0.4f)
+        val rebuilt = old.rebuildFromHtmlIfOutdated(html, "https://www.esjzone.cc$key").validate()
+        val stored = Gson().fromJson(Gson().toJson(rebuilt), ChapterBody::class.java)
+        val blocks = stored.readerBlocks { "file:///local/illustration.png" }
+        val document = ReaderChapterDocument(ReaderChapterRef("章节", key), blocks,
+            contentFingerprint = stored.fingerprint, legacyPositions = stored.legacyPositions)
+
+        val resolved = requireNotNull(saved.resolveIn(key, document))
+        assertNotEquals(saved.blockIndex, resolved.blockIndex)
+        assertEquals(blocks.indexOfLast { it is ReaderBlock.Image }, resolved.blockIndex)
+        assertEquals(saved.fraction, resolved.fraction, 0f)
+        assertNull(saved.copy(fingerprint = "unrelated").resolveIn(key, document))
+
+        val imageOnlyOld = ChapterBody.fromBlocks(listOf(ReaderBlock.Image("https://www.esjzone.cc/a.png")))
+            .copy(parserVersion = 3)
+        val imageOnlyUpgraded = imageOnlyOld.rebuildFromHtmlIfOutdated("<br><img src='/a.png'>", "https://www.esjzone.cc$key")
+            .validate()
+        assertNotNull(imageOnlyUpgraded.legacyPositions?.imageBlocks)
+        val imageChanged = ChapterBody.fromBlocks(listOf(ReaderBlock.Image("https://www.esjzone.cc/b.png")))
+            .inheritLegacyPositions(imageOnlyUpgraded)
+        assertNull(imageChanged.legacyPositions)
+    }
+
+    @Test fun sourceIndentTakesThePlaceOfTheReaderIndentOnlyOnItsOwnHardLine() {
+        val style = TextStyle(textIndent = TextIndent(firstLine = 40.sp))
+        val source = AnnotatedString("　　第一行\n第二行\n 　　第三行")
+        val layout = readerIndentLayout(source, style)
+        val lines = layout.text.split('\u2028')
+        assertEquals(source.text, lines.joinToString("\n"))
+        assertEquals(listOf(0, lines[0].length + lines[1].length + 2), layout.paragraphStyles.map { it.start })
+        assertTrue(layout.paragraphStyles.all { it.item.textIndent == TextIndent.None })
+        val plain = AnnotatedString("正文。\n后文有　　空格")
+        assertSame(plain, readerIndentLayout(plain, style))
     }
 
     @Test fun oldSnapshotRecoversDroppedProseFromSavedHtml() {

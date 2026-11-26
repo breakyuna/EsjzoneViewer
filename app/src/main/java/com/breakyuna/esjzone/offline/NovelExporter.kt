@@ -139,7 +139,7 @@ object NovelExporter {
         return body.blocks.map { block ->
             when (block.type) {
                 "image" -> assets[block.image] ?: DownloadedComponent("image", block.image.orEmpty())
-                "break" -> DownloadedComponent("text", "\n")
+                "break" -> DownloadedComponent("break", "")
                 else -> DownloadedComponent("text", block.parts.joinToString("") { it.text })
             }
         }
@@ -224,6 +224,7 @@ object NovelExporter {
                 "image" -> images[component.imageKey()]?.let { image ->
                     "    <div class=\"image\"><img src=\"${xml(image.href)}\" alt=\"插图\"/></div>"
                 } ?: "    <p class=\"image\">[图片：${xml(component.value)}]</p>"
+                "break" -> "    <p><br/></p>"
                 else -> "    <p>${xml(component.value).replace("\n", "<br/>")}</p>"
             }
         }

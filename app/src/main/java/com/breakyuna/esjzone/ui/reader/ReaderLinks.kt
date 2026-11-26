@@ -1,6 +1,6 @@
 package com.breakyuna.esjzone.ui.reader
 
-import com.breakyuna.esjzone.data.repository.toReaderBlocks
+import com.breakyuna.esjzone.data.reader.parseRichChapterContent
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderLink
 import com.breakyuna.esjzone.domain.reader.sourceText
@@ -8,7 +8,6 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.novellibrary.component.LinkTextStyle
 import com.breakyuna.esjzone.novellibrary.component.NewLineComponent
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
-import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.ui.page.findCommunityUrls
 import com.breakyuna.esjzone.ui.page.hasCommunityHtmlLink
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -23,8 +22,9 @@ internal fun readerChapterLinks(
     val htmlLinks: Map<Int, List<ReaderLink>> = if (html != null && hasCommunityHtmlLink(html)) {
         runCatching {
             val base = baseUrl.toHttpUrlOrNull() ?: EsjzoneUrls.resolve(baseUrl).toHttpUrlOrNull()
-            val components = analyseComponents(Jsoup.parseBodyFragment(html, base?.toString().orEmpty()).body())
-            val parsed = components.flatMap { it.toReaderBlocks() }
+            val chapter = parseRichChapterContent(Jsoup.parseBodyFragment(html, base?.toString().orEmpty()).body())
+            val components = chapter.components
+            val parsed = chapter.blocks
             val aligned = parsed.size == blocks.size && parsed.indices.all { index ->
                 val expected = blocks[index]
                 val actual = parsed[index]

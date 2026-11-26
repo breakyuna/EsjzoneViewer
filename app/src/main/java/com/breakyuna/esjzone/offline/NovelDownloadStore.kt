@@ -4,6 +4,7 @@ import com.breakyuna.esjzone.novellibrary.novel.preferredNovelTitle
 import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 
 import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.data.reader.withStructuredBody
 import com.breakyuna.esjzone.data.reader.withFormatting
 import com.breakyuna.esjzone.domain.reader.sourceText
@@ -24,7 +25,6 @@ import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.Component
 import com.breakyuna.esjzone.novellibrary.component.ImageComponent
 import com.breakyuna.esjzone.novellibrary.component.TextComponent
-import com.breakyuna.esjzone.novellibrary.component.analyseComponents
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.DetailedNovel
@@ -2164,7 +2164,7 @@ object NovelDownloadStore {
         if (stored.schemaVersion !in 0..1) throw IOException("Unsupported downloaded chapter version")
         return runCatching {
             val html = stored.contentHtml
-            val components = if (!html.isNullOrBlank()) {
+            val body = if (!html.isNullOrBlank()) {
                 val document = Jsoup.parseBodyFragment(html, stored.baseUrl ?: stored.url)
                 require(document.selectFirst("#oops input#pw, input#pw[name=pw]") == null)
                 require(!com.breakyuna.esjzone.network.external.CloudflareChallenge.hasChallengeDocumentMarkers(html))
@@ -2174,14 +2174,17 @@ object NovelDownloadStore {
                     image.before(org.jsoup.nodes.Element("span").text(missingImageLabel()))
                     image.remove()
                 }
-                analyseComponents(document.body())
-            } else stored.components.map { component ->
-                if (component.type == IMAGE_COMPONENT && component.value.isNotBlank()) ImageComponent(component.value)
-                else TextComponent(if (component.type == IMAGE_COMPONENT) missingImageLabel() else component.value)
+                val parsed = analyseChapterContent(document.body())
+                ChapterBody.fromBlocks(parsed.blocks).copy(formatting = parsed.formatting)
+            } else {
+                val components = stored.components.map { component ->
+                    if (component.type == IMAGE_COMPONENT && component.value.isNotBlank()) ImageComponent(component.value)
+                    else TextComponent(if (component.type == IMAGE_COMPONENT) missingImageLabel() else component.value)
+                }
+                ChapterBody.from(components)
             }
-            require(components.isNotEmpty())
-            stored.copy(schemaVersion = 2, body = ChapterBody.from(components)
-                .withFormatting(html, stored.baseUrl ?: stored.url))
+            require(body.blocks.isNotEmpty())
+            stored.copy(schemaVersion = 2, body = body)
         }.getOrNull()
     }
 

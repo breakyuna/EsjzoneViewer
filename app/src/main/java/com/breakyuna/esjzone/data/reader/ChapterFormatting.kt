@@ -10,10 +10,15 @@ import com.breakyuna.esjzone.novellibrary.component.extractParagraphElements
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Comment
 import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
 import java.util.IdentityHashMap
 
 private val chapterAlignments = setOf("left", "center", "right", "start", "end", "justify")
+private val chapterFlowContainers = setOf("body", "div", "section", "article", "main", "blockquote", "td", "th")
+private val chapterFlowIgnoredTags = setOf("script", "style", "noscript", "template", "rp")
 
 internal fun String.hasChapterFormattingMarkup(): Boolean =
     contains("text-align", ignoreCase = true) || contains("<hr", ignoreCase = true) ||
@@ -80,7 +85,7 @@ internal fun analyseChapterContent(
     )
 }
 
-private fun parseRichChapterContent(element: Element): ParsedChapterContent {
+internal fun parseRichChapterContent(element: Element): ParsedChapterContent {
     val components = mutableListOf<Component>()
     val blocks = mutableListOf<ReaderBlock>()
     val alignments = mutableMapOf<Int, String>()
@@ -108,10 +113,13 @@ private fun parseRichChapterContent(element: Element): ParsedChapterContent {
             dividers.add(blocks.size)
             continue
         }
-        val alignment = alignmentFor(paragraph)
-        val parsed = analyseParagraph(paragraph)
-        val parsedBlocks = parsed.flatMap(Component::toReaderBlocks)
         val source = sourceParents[paragraph] ?: paragraph
+        val alignment = alignmentFor(paragraph)
+        val bodyParagraphs = if (source.normalName() in chapterFlowContainers) {
+            splitChapterFlowParagraphs(paragraph)
+        } else listOf(paragraph)
+        val parsed = bodyParagraphs.flatMap(::analyseParagraph)
+        val parsedBlocks = parsed.flatMap(Component::toReaderBlocks)
         if (source.normalName() == "details") {
             val summary = paragraph.children().firstOrNull { it.normalName() == "summary" }
             val title = summary?.let { analyseParagraph(it).flatMap(Component::toReaderBlocks) }
@@ -139,6 +147,98 @@ private fun parseRichChapterContent(element: Element): ParsedChapterContent {
     ))
 }
 
+private data class ChapterBreakRun(val start: Int, val nextContent: Int, val count: Int)
+
+/** A blank line or a fresh source indent separates paragraphs in unwrapped chapter prose. */
+private fun splitChapterFlowParagraphs(element: Element): List<Element> {
+    val nodes = element.childNodes()
+    val separators = mutableListOf<ChapterBreakRun>()
+    var leading: ChapterBreakRun? = null
+    var trailing: ChapterBreakRun? = null
+    var hasContent = false
+    var index = 0
+    while (index < nodes.size) {
+        val node = nodes[index]
+        if (!node.isChapterBreak()) {
+            if (node.hasChapterFlowContent()) hasContent = true
+            index++
+            continue
+        }
+        val start = index
+        var count = 0
+        while (index < nodes.size) {
+            val next = nodes[index]
+            when {
+                next.isChapterBreak() -> count++
+                next is Comment || next is TextNode && next.wholeText.all(::isCollapsibleHtmlSpace) ||
+                    next is Element && next.normalName() in chapterFlowIgnoredTags -> Unit
+                else -> break
+            }
+            index++
+        }
+        val next = nodes.getOrNull(index)
+        val indented = next is TextNode && next.wholeText.trimStart(::isCollapsibleHtmlSpace).startsWith("\u3000\u3000")
+        var probe = if (indented && next?.hasChapterFlowContent() != true) index + 1 else index
+        while (probe < nodes.size) {
+            val candidate = nodes[probe]
+            if (candidate is Comment ||
+                candidate is TextNode && candidate.wholeText.all(::isCollapsibleHtmlSpace) ||
+                candidate is Element && candidate.normalName() in chapterFlowIgnoredTags) {
+                probe++
+            } else break
+        }
+        val followedByContent = nodes.getOrNull(probe)?.hasChapterFlowContent() == true
+        val gap = ChapterBreakRun(start, index, count)
+        if (!followedByContent) {
+            if (hasContent && index == nodes.size) trailing = gap
+            continue
+        }
+        if (!hasContent) leading = gap
+        else if (count > 1 || indented) separators += gap
+    }
+    if (separators.isEmpty()) return listOf(element)
+
+    fun fragment(start: Int, end: Int): Element = Element("p").also { paragraph ->
+        paragraph.setBaseUri(element.baseUri())
+        for (nodeIndex in start until end) {
+            val child = nodes[nodeIndex].clone()
+            if (child is TextNode) {
+                var text = child.wholeText
+                if (nodeIndex == start) text = text.trimStart(::isCollapsibleHtmlSpace)
+                if (nodeIndex == end - 1) text = text.trimEnd(::isCollapsibleHtmlSpace)
+                if (text.isEmpty()) continue
+                child.text(text)
+            }
+            paragraph.appendChild(child)
+        }
+    }
+
+    fun blankLine(): Element = Element("p").apply { appendElement("br") }
+    return buildList {
+        repeat(leading?.count ?: 0) { add(blankLine()) }
+        var start = leading?.nextContent ?: 0
+        for (gap in separators) {
+            add(fragment(start, gap.start))
+            repeat(gap.count - 1) { add(blankLine()) }
+            start = gap.nextContent
+        }
+        val bodyEnd = trailing?.start ?: nodes.size
+        add(fragment(start, bodyEnd))
+        repeat((trailing?.count ?: 1) - 1) { add(blankLine()) }
+    }
+}
+
+private fun isCollapsibleHtmlSpace(char: Char): Boolean = char in " \t\n\r\u000c"
+
+private fun Node.isChapterBreak(): Boolean = this is Element && normalName() == "br"
+
+private fun Node.hasChapterFlowContent(): Boolean = when (this) {
+    is TextNode -> wholeText.isNotBlank()
+    is Element -> normalName() !in chapterFlowIgnoredTags &&
+        (normalName() == "img" || hasText() || selectFirst("img") != null)
+    else -> false
+}
+
 private fun ReaderBlock.leadingTitleParts(title: String): Int? {
     if (this !is ReaderBlock.Paragraph) return null
     val expected = title.filterNot(Char::isWhitespace)
@@ -152,10 +252,13 @@ private fun ReaderBlock.leadingTitleParts(title: String): Int? {
 }
 
 /** The saved HTML omits the outer container, so some inherited alignments only exist in the snapshot. */
-internal fun ChapterBody.keepSavedAlignments(recovered: ReaderChapterFormatting): ReaderChapterFormatting {
-    val saved = formatting?.alignments.orEmpty().filter { (index, alignment) ->
+internal fun ChapterBody.savedAlignments(): Map<Int, String> =
+    formatting?.alignments.orEmpty().filter { (index, alignment) ->
         index in blocks.indices && alignment in chapterAlignments
     }
+
+internal fun ChapterBody.keepSavedAlignments(recovered: ReaderChapterFormatting): ReaderChapterFormatting {
+    val saved = savedAlignments()
     return if (saved.isEmpty()) recovered else recovered.copy(alignments = saved + recovered.alignments)
 }
 

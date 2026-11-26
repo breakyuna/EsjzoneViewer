@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.material3.Text
 import androidx.compose.material3.LocalContentColor
@@ -117,11 +116,12 @@ internal fun paginateReaderChapter(
         }
         val layoutStyle = readerRubyParagraphStyle(blocks[blockIndex], paragraphStyle, inline,
             textMeasurer, density, textTransform)
+        val layoutText = readerIndentLayout(text, layoutStyle)
         checkCancelled()
         val layout = textMeasurer.measure(
-            text = text,
+            text = layoutText,
             style = layoutStyle,
-            placeholders = placeholders(text, inline),
+            placeholders = placeholders(layoutText, inline),
             constraints = Constraints(maxWidth = widthPx)
         )
         val signature = ReaderUnderlines.signature(blocks[blockIndex], text.text)
@@ -163,18 +163,20 @@ internal fun paginateReaderChapter(
             var lineHeight: Int
             while (true) {
                 checkCancelled()
-                segmentText = text.subSequence(start, layout.getLineEnd(endLine - 1))
-                val ranges = placeholders(segmentText, inline)
+                val end = layout.getLineEnd(endLine - 1)
+                segmentText = text.subSequence(start, end)
+                val displayText = readerIndentLayout(segmentText, fragmentStyle)
+                val ranges = placeholders(displayText, inline)
                 val constraints = Constraints(maxWidth = widthPx)
                 val fragment = textMeasurer.measure(
-                    segmentText, fragmentStyle, placeholders = ranges, constraints = constraints
+                    displayText, fragmentStyle, placeholders = ranges, constraints = constraints
                 )
                 val lastLine = fragment.lineCount - 1
                 // Keep the newline in the source slice and omit the empty layout line created by cutting there.
-                maxLines = if (endLine == endLimit && endLimit < layout.lineCount && lastLine > 0 &&
+                maxLines = if (endLine < layout.lineCount && lastLine > 0 &&
                     fragment.getLineStart(lastLine) == segmentText.length) lastLine else Int.MAX_VALUE
                 lineHeight = if (maxLines == Int.MAX_VALUE) fragment.size.height else textMeasurer.measure(
-                    segmentText, fragmentStyle, maxLines = maxLines, placeholders = ranges, constraints = constraints
+                    displayText, fragmentStyle, maxLines = maxLines, placeholders = ranges, constraints = constraints
                 ).size.height
                 if (usedHeight + lineHeight <= heightPx) break
                 if (endLine == startLine + 1) break
@@ -321,7 +323,7 @@ internal fun ReaderPageContent(
     CompositionLocalProvider(LocalReaderUnderlineSelection provides underlineSelection,
         LocalContentColor provides contentColor) {
         Box {
-            if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else SelectionContainer { content() }
+            if (settings.longPressUnderline || bookmarkPicking) DisableSelection { content() } else ReaderSelectionContainer(content)
             ReaderUnderlineMagnifier(underlineSelection, Modifier.matchParentSize())
         }
     }

@@ -240,6 +240,7 @@ private fun Document.toDetailedChapter(chapter: Chapter, targetUrl: String): Det
     val previous = parseChapterNav(previousChapter, targetUrl)
     val next = parseChapterNav(nextChapter, targetUrl)
 
+    outputSettings().prettyPrint(false)
     return DetailedChapter(
         chapter.name,
         components,

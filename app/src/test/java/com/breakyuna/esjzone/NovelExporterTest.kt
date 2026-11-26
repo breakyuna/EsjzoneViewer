@@ -1,5 +1,7 @@
 package com.breakyuna.esjzone
 
+import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.offline.DownloadedChapterContent
 import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedComponent
@@ -36,9 +38,8 @@ class NovelExporterTest {
     @Test
     fun structuredTxtUsesBodyAndEpubRetainsRichSource() {
         val record = manifest().chapters.single()
-        val body = com.breakyuna.esjzone.data.reader.ChapterBody.fromBlocks(listOf(
-            com.breakyuna.esjzone.domain.reader.ReaderBlock.Paragraph(listOf(
-                com.breakyuna.esjzone.domain.reader.ReaderBlock.Text("结构化正文")))
+        val body = ChapterBody.fromBlocks(listOf(
+            ReaderBlock.Paragraph(listOf(ReaderBlock.Text("结构化正文")))
         ))
         val snapshot = chapter(record).copy(schemaVersion = 2, body = body,
             components = listOf(DownloadedComponent("text", "旧简化文本")),
@@ -51,6 +52,20 @@ class NovelExporterTest {
         NovelExporter.exportEpub(manifest(), { snapshot }, epub)
         assertTrue(epubChapter(epub).contains("https://example.com/reference"))
         assertTrue(epubChapter(epub).contains("<table>"))
+    }
+
+    @Test
+    fun structuredTxtWritesOneNewlineForEachBlankLineBlock() {
+        val manifest = manifest()
+        val snapshot = chapter(manifest.chapters.single()).copy(schemaVersion = 2, body = ChapterBody.fromBlocks(
+            listOf(ReaderBlock.Text("第一段"), ReaderBlock.LineBreak, ReaderBlock.LineBreak, ReaderBlock.Text("第二段"))
+        ))
+        val output = ByteArrayOutputStream()
+
+        NovelExporter.exportTxt(manifest, { snapshot }, output)
+
+        val exported = output.toString("UTF-8")
+        assertEquals("\n\n\n", exported.substringAfter("第一段").substringBefore("第二段"))
     }
 
 

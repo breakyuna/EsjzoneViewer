@@ -67,6 +67,7 @@ internal object ExternalChapterHtml {
         }
         val title = document.selectFirst("#title")?.text()?.trim().orEmpty().ifBlank { chapter.name }
         val parsed = analyseChapterContent(content)
+        document.outputSettings().prettyPrint(false)
         return DetailedChapter(
             title, parsed.components, previous, next, content.html(), url,
             body = ChapterBody.fromBlocks(parsed.blocks).copy(formatting = parsed.formatting)
@@ -75,6 +76,7 @@ internal object ExternalChapterHtml {
 
     fun cacheDocument(detail: DetailedChapter, url: String): String {
         val document = Jsoup.parse("<html><body><div id=title></div><div id=content></div></body></html>", url)
+        document.outputSettings().prettyPrint(false)
         document.selectFirst("#title")?.text(detail.name)
         document.selectFirst("#content")?.html(detail.contentHtml.orEmpty())
         detail.previous?.let { document.body().appendElement("a").attr("href", it.url).text("上一页") }
