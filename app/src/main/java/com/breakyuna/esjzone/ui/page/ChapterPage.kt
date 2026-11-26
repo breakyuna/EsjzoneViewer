@@ -540,6 +540,11 @@ class ChapterPage(
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
+        LaunchedEffect(navigationSettled, lifecycleOwner) {
+            if (navigationSettled && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                readerResumed = true
+            }
+        }
         var pendingBoundaryTurn by remember { mutableStateOf<ReaderBoundaryTurn?>(null) }
         var progressPreview by remember { mutableStateOf<ReaderBookLocation?>(null) }
         var progressReturnLocation by remember { mutableStateOf<ReaderBookLocation?>(null) }
@@ -1267,7 +1272,7 @@ class ChapterPage(
             previousPasswordChapterKeys = lockedKeys
             val entry = activeChapter ?: return@LaunchedEffect
             if (chapterIdentity(entry.chapter) in unlockedKeys && !entry.requiresPassword &&
-                !resumePending && pendingSeekLocation == null) {
+                !resumePending && !hasPendingMark && pendingSeekLocation == null) {
                 pendingSeekLocation = readerBookLocationFor(entry.chapter, 0f, bookChapterOrder,
                     bookChapterIndices, progressTextIndex)
                     ?: ReaderBookLocation(entry.chapter, -1, 0f, bookChapterOrder.size)
@@ -1669,10 +1674,17 @@ class ChapterPage(
         LaunchedEffect(pendingUnderline, result?.chapters, scriptReady, readerSettings.script, nameReplaceSettings,
             bookChapterOrder, progressTextIndex) {
             val (target, mark) = pendingUnderline ?: return@LaunchedEffect
-            if (!scriptReady) return@LaunchedEffect
-            val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
-                ?: return@LaunchedEffect
-            if (entry.requiresPassword) return@LaunchedEffect
+            val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) } ?: run {
+                val loaded = chapterPageModel.state.value as? ChapterPageModel.State.Result
+                if (loaded != null && loaded.chapters.none { sameReaderChapter(it.chapter, target) }) {
+                    AppLogger.w("ChapterPage", "Underline target is outside the loaded window; releasing seek")
+                    pendingUnderline = null
+                    resumePending = false
+                    deferredResumeChapterKey = null
+                }
+                return@LaunchedEffect
+            }
+            if (!scriptReady || entry.requiresPassword) return@LaunchedEffect
             val names = nameReplaceSettings
             val mappings = convertedText?.blockMappings
             val position = withContext(Dispatchers.Default) {
@@ -1689,10 +1701,17 @@ class ChapterPage(
 
         LaunchedEffect(pendingBookmark, result?.chapters, scriptReady, bookChapterOrder, progressTextIndex) {
             val (target, saved) = pendingBookmark ?: return@LaunchedEffect
-            if (!scriptReady) return@LaunchedEffect
-            val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) }
-                ?: return@LaunchedEffect
-            if (entry.requiresPassword) return@LaunchedEffect
+            val entry = result?.chapters?.firstOrNull { sameReaderChapter(it.chapter, target) } ?: run {
+                val loaded = chapterPageModel.state.value as? ChapterPageModel.State.Result
+                if (loaded != null && loaded.chapters.none { sameReaderChapter(it.chapter, target) }) {
+                    AppLogger.w("ChapterPage", "Bookmark target is outside the loaded window; releasing seek")
+                    pendingBookmark = null
+                    resumePending = false
+                    deferredResumeChapterKey = null
+                }
+                return@LaunchedEffect
+            }
+            if (!scriptReady || entry.requiresPassword) return@LaunchedEffect
             pendingBookmark = null
             val targetKey = chapterIdentity(entry.chapter)
             val exact = saved.copy(chapterKey = targetKey).resolveIn(targetKey, entry.document)
