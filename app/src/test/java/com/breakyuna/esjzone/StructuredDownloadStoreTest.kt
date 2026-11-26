@@ -205,6 +205,24 @@ class StructuredDownloadStoreTest {
         assertTrue(entries.getValue("OEBPS/chapter-1.xhtml").contains("正文中文与 ruby"))
     }
 
+    @Test
+    fun exportReadsLegacyChapterWithoutRewritingIt() = withStorage { root ->
+        val target = chapter(1)
+        val saved = save(1, listOf(target))
+        val record = saved.chapters.single()
+        val file = File(root.listFiles()!!.single(), record.fileName)
+        val legacy = Gson().toJson(DownloadedChapterContent(
+            record.name, record.url, listOf(DownloadedComponent("text", "旧版正文")), schemaVersion = 1
+        ))
+        file.writeText(legacy)
+        val txt = ByteArrayOutputStream()
+
+        NovelExporter.exportTxt(saved, { NovelDownloadStore.chapterContent(novelUrl, it, migrateOnRead = false) }, txt)
+
+        assertTrue(txt.toString("UTF-8").contains("旧版正文"))
+        assertEquals(legacy, file.readText())
+    }
+
     // --- Catalog & manifest completeness (5 tests) ---
 
     @Test

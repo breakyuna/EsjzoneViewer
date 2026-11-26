@@ -33,7 +33,7 @@ sealed interface NovelExportOutcome {
     /** The export threw; [removed] tells whether the partial document was deleted. */
     data class Failed(val removed: Boolean, val error: Throwable?) : NovelExportOutcome
 
-    /** The owning scope went away mid-export (page left / ViewModel cleared). */
+    /** The export coroutine was cancelled mid-write. */
     data class Cancelled(val removed: Boolean) : NovelExportOutcome
 
     /** Another export was still running; the new [removed] target was discarded. */
@@ -41,10 +41,8 @@ sealed interface NovelExportOutcome {
 }
 
 /**
- * Runs one export at a time in [scope] (the novel page's ViewModel scope), so a
- * configuration change no longer cancels it. Every non-success path removes the
- * document that the picker already created, so no truncated TXT or broken EPUB
- * is left behind.
+ * Runs one export at a time in [scope]. Failed or cancelled exports attempt to
+ * remove the document that the picker already created.
  */
 class NovelExportController(
     private val scope: CoroutineScope,

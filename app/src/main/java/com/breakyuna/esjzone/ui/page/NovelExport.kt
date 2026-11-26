@@ -4,38 +4,34 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.offline.NovelExportController
 import com.breakyuna.esjzone.offline.NovelExportOutcome
 import com.breakyuna.esjzone.offline.NovelExportTarget
 import com.breakyuna.esjzone.util.AppLogger
 import com.breakyuna.esjzone.util.LocaleHelper
-import com.breakyuna.esjzone.app.PresentationAccess
 import java.io.OutputStream
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.breakyuna.esjzone.ui.designsystem.GlobalToast as Toast
 
-/**
- * Owns TXT/EPUB export for one novel page.
- *
- * ViewModel scope instead of WorkManager: the SAF grant from `CreateDocument`
- * is a temporary, Activity-bound permission that a worker cannot rely on after
- * process death, and exports take seconds, not minutes. The ViewModel survives
- * rotation; leaving the page clears it, which cancels the export and removes
- * the partial document.
- */
-class NovelExportModel(context: Context) : ViewModel() {
-    private val appContext = context.applicationContext
+/** Keeps TXT and EPUB exports running across navigation within the app process. */
+internal object NovelExport {
+    private const val TAG = "NovelExport"
+    private val appContext: Context
+        get() = EsjzoneApplication.instance
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val controller = NovelExportController(
-        scope = viewModelScope,
+        scope = scope,
         ioDispatcher = Dispatchers.IO,
-        onOutcome = ::report
+        onOutcome = { report(it, currentLabel) }
     )
 
     val isExporting: StateFlow<Boolean> = controller.isExporting
@@ -50,28 +46,28 @@ class NovelExportModel(context: Context) : ViewModel() {
     }
 
     /** The picker created [uri] but there is nothing to export into it any more. */
-    fun discard(uri: Uri) {
-        viewModelScope.launch {
+    fun discard(uri: Uri, label: String) {
+        scope.launch {
             val removed = withContext(Dispatchers.IO) {
                 SafExportTarget(appContext.contentResolver, uri).delete()
             }
-            report(NovelExportOutcome.Failed(removed, IllegalStateException("Novel details unavailable")))
+            report(NovelExportOutcome.Failed(removed, IllegalStateException("Novel details unavailable")), label)
         }
     }
 
     @Volatile
     private var currentLabel: String = ""
 
-    private fun report(outcome: NovelExportOutcome) {
+    private fun report(outcome: NovelExportOutcome, label: String) {
         val message = when (outcome) {
             NovelExportOutcome.Success -> R.string.novel_export_success
             is NovelExportOutcome.Failed -> {
-                AppLogger.e(TAG, "Failed to export $currentLabel", outcome.error)
+                AppLogger.e(TAG, "Failed to export $label", outcome.error)
                 if (outcome.removed) R.string.novel_export_failed_removed
                 else R.string.novel_export_failed_leftover
             }
             is NovelExportOutcome.Cancelled -> {
-                AppLogger.w(TAG, "Export of $currentLabel cancelled; removed=${outcome.removed}")
+                AppLogger.w(TAG, "Export of $label cancelled; removed=${outcome.removed}")
                 if (outcome.removed) R.string.novel_export_cancelled_removed
                 else R.string.novel_export_cancelled_leftover
             }
@@ -88,10 +84,6 @@ class NovelExportModel(context: Context) : ViewModel() {
     private fun localizedContext(): Context = runCatching {
         LocaleHelper.createLocalizedContext(appContext, PresentationAccess.settings.language.value)
     }.getOrElse { appContext }
-
-    private companion object {
-        const val TAG = "NovelExport"
-    }
 }
 
 /** SAF document picked by `ActivityResultContracts.CreateDocument`. */

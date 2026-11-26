@@ -93,10 +93,12 @@ class NovelExporterTest {
         }
         val output = ByteArrayOutputStream()
         val image = File.createTempFile("selected-chapter", ".png")
+        val loadedChapters = mutableListOf<String>()
         val loadedImages = mutableListOf<String>()
         try {
             image.writeBytes(byteArrayOf(1, 2, 3))
             NovelExporter.exportEpub(manifest().copy(chapters = records, complete = false), { record ->
+                loadedChapters += record.url
                 chapter(record).copy(contentHtml = null, components = listOf(
                     DownloadedComponent("text", "Body ${record.index}"),
                     DownloadedComponent("image", "image-${record.index}", mediaType = "image/png")
@@ -113,6 +115,7 @@ class NovelExporterTest {
                     entry = zip.nextEntry
                 }
             }
+            assertEquals(listOf(records[0].url, records[2].url), loadedChapters)
             assertEquals(listOf("image-0", "image-2"), loadedImages)
             assertTrue(entries.getValue("OEBPS/chapter-1.xhtml").contains("Body 0"))
             assertTrue(entries.getValue("OEBPS/chapter-2.xhtml").contains("Body 2"))

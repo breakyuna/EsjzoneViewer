@@ -66,22 +66,27 @@ object NovelExporter {
         imageLoader: (DownloadedComponent) -> StorageFile? = { null },
         selectedChapterUrls: Set<String>? = null
     ) {
-        // Keep only the TOC and image references in memory, never every chapter body.
-        val chapters = mutableListOf<Pair<DownloadedChapterRecord, String>>()
+        val records = chaptersForExport(manifest, selectedChapterUrls)
+        val chapterTitles = ArrayList<String>(records.size)
         val images = linkedMapOf<String, EpubImage>()
-        chaptersForExport(manifest, selectedChapterUrls).forEach { record ->
-            val chapter = chapterLoader(record)
-                ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
-            chapters += record to chapter.name.ifBlank { record.name }
-            chapter.exportComponents().filter { it.type == "image" }.forEach imageLoop@{ component ->
-                val key = component.imageKey()
-                val file = imageLoader(component)?.takeIf(StorageFile::isFile) ?: return@imageLoop
-                // SVG is active XML; do not copy unsanitized remote documents into an EPUB.
-                if (file.extension.equals("svg", ignoreCase = true) ||
-                    component.mediaType?.substringBefore(';')?.trim().equals("image/svg+xml", ignoreCase = true)) {
-                    return@imageLoop
-                }
-                if (!images.containsKey(key)) {
+        ZipOutputStream(output.buffered()).use { zip ->
+            addStoredEntry(zip, "mimetype", "application/epub+zip")
+            addTextEntry(zip, "META-INF/container.xml", containerXml())
+            records.forEachIndexed { index, record ->
+                val chapter = chapterLoader(record)
+                    ?: error("Downloaded chapter ${record.index + 1} is unavailable for export")
+                chapterTitles += chapter.name.ifBlank { record.name }
+                val components = chapter.exportComponents()
+                val chapterImages = components.filter { it.type == "image" }
+                chapterImages.forEach { component ->
+                    val key = component.imageKey()
+                    if (key in images) return@forEach
+                    val file = imageLoader(component)?.takeIf(StorageFile::isFile) ?: return@forEach
+                    // SVG is active XML; do not copy unsanitized remote documents into an EPUB.
+                    if (file.extension.equals("svg", ignoreCase = true) ||
+                        component.mediaType?.substringBefore(';')?.trim().equals("image/svg+xml", ignoreCase = true)) {
+                        return@forEach
+                    }
                     val extension = file.extension.takeIf { it.matches(Regex("[A-Za-z0-9]{1,5}")) }
                         ?.lowercase(Locale.ROOT)
                         ?: "img"
@@ -93,24 +98,15 @@ object NovelExporter {
                             ?: mediaTypeFor(extension)
                     )
                 }
-            }
-        }
-
-        require(chapters.isNotEmpty()) { "No downloaded chapters are available for export" }
-        ZipOutputStream(output.buffered()).use { zip ->
-            addStoredEntry(zip, "mimetype", "application/epub+zip")
-            addTextEntry(zip, "META-INF/container.xml", containerXml())
-            addTextEntry(zip, "OEBPS/content.opf", contentOpf(manifest, chapters.size, images.values))
-            addTextEntry(zip, "OEBPS/nav.xhtml", navigationXhtml(manifest, chapters))
-            chapters.forEachIndexed { index, (record, _) ->
-                val chapter = chapterLoader(record)
-                    ?: error("Downloaded chapter ${record.index + 1} disappeared during export")
+                val chapterNumber = index + 1
                 addTextEntry(
                     zip,
-                    "OEBPS/chapter-${index + 1}.xhtml",
-                    chapterXhtml(chapter, index + 1, images)
+                    "OEBPS/chapter-$chapterNumber.xhtml",
+                    chapterXhtml(chapter, chapterNumber, components, chapterImages, images)
                 )
             }
+            addTextEntry(zip, "OEBPS/content.opf", contentOpf(manifest, chapterTitles.size, images.values))
+            addTextEntry(zip, "OEBPS/nav.xhtml", navigationXhtml(manifest, chapterTitles))
             images.values.forEach { image ->
                 addBinaryEntry(zip, "OEBPS/${image.href}", image.file)
             }
@@ -193,9 +189,9 @@ object NovelExporter {
 
     private fun navigationXhtml(
         manifest: DownloadedNovelManifest,
-        chapters: List<Pair<DownloadedChapterRecord, String>>
+        chapterTitles: List<String>
     ): String {
-        val links = chapters.mapIndexed { index, (_, title) ->
+        val links = chapterTitles.mapIndexed { index, title ->
             "        <li><a href=\"chapter-${index + 1}.xhtml\">${xml(title)}</a></li>"
         }.joinToString("\n")
         return """<?xml version="1.0" encoding="UTF-8"?>
@@ -217,9 +213,11 @@ object NovelExporter {
     private fun chapterXhtml(
         chapter: DownloadedChapterContent,
         index: Int,
+        components: List<DownloadedComponent>,
+        chapterImages: List<DownloadedComponent>,
         images: Map<String, EpubImage>
     ): String {
-        val body = richChapterHtml(chapter, images) ?: chapter.exportComponents().joinToString("\n") { component ->
+        val body = richChapterHtml(chapter, chapterImages, images) ?: components.joinToString("\n") { component ->
             when (component.type) {
                 "image" -> images[component.imageKey()]?.let { image ->
                     "    <div class=\"image\"><img src=\"${xml(image.href)}\" alt=\"插图\"/></div>"
@@ -284,6 +282,7 @@ object NovelExporter {
 
     private fun richChapterHtml(
         chapter: DownloadedChapterContent,
+        chapterImages: List<DownloadedComponent>,
         images: Map<String, EpubImage>
     ): String? {
         val html = chapter.contentHtml?.takeIf(String::isNotBlank) ?: return null
@@ -301,7 +300,6 @@ object NovelExporter {
                 .forEach { element.removeAttr(it.key) }
         }
 
-        val imageComponents = chapter.exportComponents().filter { it.type == "image" }
         document.select("img").forEach { image ->
             val candidates = IMAGE_URL_ATTRIBUTES.mapNotNull { attribute ->
                 image.absUrl(attribute)
@@ -309,7 +307,7 @@ object NovelExporter {
                     .trim()
                     .takeIf(String::isNotBlank)
             }
-            val component = imageComponents.firstOrNull { it.value in candidates }
+            val component = chapterImages.firstOrNull { it.value in candidates }
             val exportedImage = component?.let { images[it.imageKey()] }
             if (exportedImage != null) {
                 IMAGE_URL_ATTRIBUTES.forEach(image::removeAttr)

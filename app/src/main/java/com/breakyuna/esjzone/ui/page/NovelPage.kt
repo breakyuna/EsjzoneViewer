@@ -294,8 +294,6 @@ class NovelPage(
         var exportSelection by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
             mutableStateOf(emptySet<String>())
         }
-        val exportModel = rememberAppViewModel { NovelExportModel(context) }
-        val exporting by exportModel.isExporting.collectAsStateWithLifecycle()
         val detailedForExport = (state as? NovelPageModel.State.Result)?.detailed
 
         fun export(uri: Uri?, format: NovelExportFormat) {
@@ -304,18 +302,18 @@ class NovelPage(
             // The page may have been recreated (process death) while the picker
             // was open; the document now exists, so remove it instead of leaving 0 bytes.
             if (detailed == null) {
-                exportModel.discard(uri)
+                NovelExport.discard(uri, "${novel.name} as ${format.name}")
                 return
             }
             val selected = exportSelection
-            exportModel.start(uri, "${detailed.name} as ${format.name}") { output, checkActive ->
+            NovelExport.start(uri, "${detailed.name} as ${format.name}") { output, checkActive ->
                 writeNovelExport(detailed, output, format, selected, checkActive)
             }
         }
 
         fun requestExport(format: NovelExportFormat) {
             // One export at a time: a second picker would create a document we must then discard.
-            if (exporting) {
+            if (NovelExport.isExporting.value) {
                 Toast.makeText(context, R.string.novel_export_busy, Toast.LENGTH_SHORT).show()
             } else {
                 exportFormat = format
@@ -1438,7 +1436,7 @@ private fun writeNovelExport(
     ))
     val loader = { record: DownloadedChapterRecord ->
         checkActive()
-        PresentationAccess.downloads.chapterContent(novel.url, record)
+        PresentationAccess.downloads.chapterContent(novel.url, record, migrateOnRead = false)
     }
     when (format) {
         NovelExportFormat.TXT -> NovelExporter.exportTxt(exportManifest, loader, stream, selectedChapterUrls)

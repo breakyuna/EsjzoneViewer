@@ -136,7 +136,7 @@ class NovelExportControllerTest {
         }!!
         assertTrue(started.await(5, TimeUnit.SECONDS))
         assertTrue(controller.isExporting.value)
-        scope.cancel() // ViewModel cleared: page left
+        scope.cancel()
         withTimeout(5_000) { job.join() }
 
         val outcome = outcomes.await() as NovelExportOutcome.Cancelled

@@ -1924,11 +1924,18 @@ object NovelDownloadStore {
 
     fun chapterContent(
         novelUrl: String,
-        record: DownloadedChapterRecord
+        record: DownloadedChapterRecord,
+        migrateOnRead: Boolean = true
     ): DownloadedChapterContent? = synchronized(ioLock) {
         val directory = directoryFor(novelUrl, create = false) ?: return@synchronized null
         val file = resolveLocalFile(directory, record.fileName) ?: return@synchronized null
-        readStoredChapter(directory, file)
+        val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
+        val decoded = decodeStoredChapter(stored) ?: return@synchronized null
+        if (migrateOnRead && (stored.schemaVersion != 2 || stored.body != decoded.body)) {
+            // Reading remains possible if storage is full; the original survives a failed rename.
+            runCatching { writeMigratedChapter(file, decoded, newWriteGuard(directory)) }
+        }
+        decoded
     }
 
     suspend fun searchChapters(
@@ -2138,16 +2145,6 @@ object NovelDownloadStore {
             AppLogger.w("NovelDownloadStore", "Unable to read downloaded chapter during validation", error)
             null
         }
-    }
-
-    private fun readStoredChapter(directory: StorageFile, file: StorageFile): DownloadedChapterContent? = synchronized(ioLock) {
-        val stored = readJson(file, DownloadedChapterContent::class.java) ?: return@synchronized null
-        val decoded = decodeStoredChapter(stored) ?: return@synchronized null
-        if (stored.schemaVersion != 2 || stored.body != decoded.body) {
-            // Reading remains possible if storage is full; the original survives a failed rename.
-            runCatching { writeMigratedChapter(file, decoded, newWriteGuard(directory)) }
-        }
-        decoded
     }
 
     private fun decodeStoredChapter(stored: DownloadedChapterContent): DownloadedChapterContent? {
