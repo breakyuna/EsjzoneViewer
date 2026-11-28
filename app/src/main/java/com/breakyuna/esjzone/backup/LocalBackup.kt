@@ -188,50 +188,54 @@ object LocalBackup {
         try {
             ZipInputStream(checkNotNull(context.contentResolver.openInputStream(uri))).use { zip ->
                 val seen = HashSet<String>()
-                val limit = minOf(16L * 1024 * 1024 * 1024,
+                val streamLimit = 16L * 1024 * 1024 * 1024
+                val diskLimit = minOf(streamLimit,
                     (staging.usableSpace - 64L * 1024 * 1024).coerceAtLeast(0))
+                val skipBuffer = ByteArray(64 * 1024)
+                var processed = 0L
                 var extracted = 0L
                 while (true) {
                     checkActive()
                     val entry = zip.nextEntry ?: break
-                    val target = safeEntry(staging, entry.name)
                     require(seen.add(entry.name) && seen.size <= 200_000)
                     if (entry.isDirectory || (entry.name.startsWith("downloads/") && BackupCategory.DOWNLOADS !in selected) ||
                         (entry.name == BACKGROUND_PHOTO && BackupCategory.READER_SETTINGS !in selected)
                     ) {
-                        // Drain skipped data with cancellation points.
-                        val buffer = ByteArray(64 * 1024)
+                        // Drain all skipped entries (including directory entries, which can carry
+                        // unexpected payload) with cancellation checks and a stream-only cap so
+                        // they remain cancellable without counting against disk free space.
                         while (true) {
                             checkActive()
-                            val count = zip.read(buffer)
+                            val count = zip.read(skipBuffer)
                             if (count < 0) break
-                            extracted += count
-                            require(extracted <= limit) { "Backup processing limit exceeded" }
+                            processed += count
+                            require(processed <= streamLimit) { "Backup processing limit exceeded" }
                         }
                         zip.closeEntry()
                         continue
                     }
-                    if (!entry.isDirectory) {
-                        var entryBytes = 0L
-                        target.parentFile?.mkdirs()
-                        target.outputStream().buffered().use { output ->
-                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                            while (true) {
-                                checkActive()
-                                val count = zip.read(buffer)
-                                checkActive()
-                                if (count < 0) break
-                                extracted += count
-                                require(extracted <= limit)
-                                entryBytes += count
-                                if (entry.name == "backup.json") {
-                                    require(entryBytes <= com.breakyuna.esjzone.util.BoundedJson.MAX_BYTES)
-                                }
-                                if (entry.name == BACKGROUND_PHOTO) {
-                                    require(entryBytes <= MAX_BACKGROUND_BYTES)
-                                }
-                                output.write(buffer, 0, count)
+                    val target = safeEntry(staging, entry.name)
+                    var entryBytes = 0L
+                    target.parentFile?.mkdirs()
+                    target.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            checkActive()
+                            val count = zip.read(buffer)
+                            checkActive()
+                            if (count < 0) break
+                            processed += count
+                            require(processed <= streamLimit) { "Backup processing limit exceeded" }
+                            extracted += count
+                            require(extracted <= diskLimit)
+                            entryBytes += count
+                            if (entry.name == "backup.json") {
+                                require(entryBytes <= com.breakyuna.esjzone.util.BoundedJson.MAX_BYTES)
                             }
+                            if (entry.name == BACKGROUND_PHOTO) {
+                                require(entryBytes <= MAX_BACKGROUND_BYTES)
+                            }
+                            output.write(buffer, 0, count)
                         }
                     }
                     zip.closeEntry()

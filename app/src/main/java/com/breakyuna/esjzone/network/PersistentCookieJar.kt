@@ -39,6 +39,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     private val lock = Any()
     private val cookies = mutableListOf<StoredCookie>()
     private var epoch = 0L
+    @Volatile private var scopeRevision = 0L
+    private var activeSharedScopeLoaded = false
+    private var cachedActiveSharedScope: String? = null
     private var memoryIdentity: String? = null
     private var memoryEmailDigest: String? = null
     private val memoryActiveHosts = mutableSetOf<String>()
@@ -47,6 +50,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     val loginSessionChanges = mutableLoginSessionChanges.asStateFlow()
 
     fun sessionEpoch(): Long = synchronized(lock) { epoch }
+    fun accountScopeRevision(): Long = scopeRevision
 
     init {
         migrateLegacyCookies()
@@ -105,7 +109,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                     }
                 }
             }
-            val activeIdentity = securePreferences?.getString(activeAccountScopeKey(url.host), null)
+            val activeIdentity = activeAccountIdentity()
             val rotatedKey = responseCookies.firstOrNull {
                 it.name == "ews_key" && it.expiresAt > System.currentTimeMillis()
             }?.value
@@ -113,6 +117,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                 securePreferences?.edit()
                     ?.putString(accountKeyMappingKey(url.host, rotatedKey), activeIdentity)
                     ?.apply()
+                scopeRevision++
             }
             persistLocked(durable = responseCookies.any {
                 it.name in SESSION_COOKIE_NAMES && it.expiresAt > System.currentTimeMillis()
@@ -146,6 +151,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             if (memoryIdentity == null && authorization != null) {
                 memoryIdentity = UUID.randomUUID().toString()
                 memoryActiveHosts += normalizedHost(host)
+                scopeRevision++
             }
             return@synchronized
         }
@@ -158,6 +164,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                 .putString(accountKeyMappingKey(host, authorization.ewsKey), identity)
                 .putString(LEGACY_PRIMARY_HOST, normalizedHost(host))
                 .putString(LEGACY_PRIMARY_IDENTITY, identity).commit()
+            cachedActiveSharedScope = identity
+            activeSharedScopeLoaded = true
+            scopeRevision++
         } else if (authorization != null) {
             val shared = secure.getString(ACTIVE_SHARED_SCOPE, null)
             if (!shared.isNullOrBlank() &&
@@ -170,6 +179,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
                 val committed = secure.edit()
                     .putString(accountKeyMappingKey(host, authorization.ewsKey), shared)
                     .commit()
+                scopeRevision++
                 AppLogger.i(TAG, "Restored session account mapping: host=${normalizedHost(host)}, committed=$committed")
             }
         }
@@ -211,8 +221,16 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     fun activeAccountIdentity(): String? = synchronized(lock) {
-        securePreferences?.getString(ACTIVE_SHARED_SCOPE, null)?.takeIf(String::isNotBlank)
-            ?: memoryIdentity
+        val secure = securePreferences
+        if (secure != null) {
+            if (!activeSharedScopeLoaded) {
+                cachedActiveSharedScope = secure.getString(ACTIVE_SHARED_SCOPE, null)?.takeIf(String::isNotBlank)
+                activeSharedScopeLoaded = true
+            }
+            cachedActiveSharedScope ?: memoryIdentity
+        } else {
+            memoryIdentity
+        }
     }
 
     /** null means an upgraded session has no known email mapping yet. */
@@ -288,6 +306,7 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             }
             memoryEmailDigest = identityDigest
             memoryActiveHosts += normalizedHost(host)
+            scopeRevision++
             return@synchronized
         }
         val mappingKey = ACCOUNT_SCOPE_PREFIX + identityDigest
@@ -327,6 +346,9 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
             editor.putString(pendingLegacyScopeKey(host, identity), "account:$host:$legacyCacheScope")
         }
         editor.commit()
+        cachedActiveSharedScope = identity
+        activeSharedScopeLoaded = true
+        scopeRevision++
     }
 
     fun pendingLegacyScopeFor(host: String, ewsKey: String): String? = synchronized(lock) {
@@ -419,7 +441,10 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     fun clear(host: String? = null) {
         synchronized(lock) {
             epoch++
+            scopeRevision++
             if (host.isNullOrBlank()) {
+                cachedActiveSharedScope = null
+                activeSharedScopeLoaded = true
                 memoryIdentity = null
                 memoryEmailDigest = null
                 memoryActiveHosts.clear()

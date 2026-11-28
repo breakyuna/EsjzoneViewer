@@ -62,8 +62,8 @@ internal suspend fun loginMirrorsInParallel(
                 launch { onSuccess(outcome.authorization) }
             }
             is LoginAttemptResult.IoFailure -> networkFailure = outcome.error
-            is LoginAttemptResult.NonSuccessStatus,
-            LoginAttemptResult.InvalidResponse -> receivedServerResult = true
+            is LoginAttemptResult.NonSuccessStatus -> receivedServerResult = true
+            LoginAttemptResult.InvalidResponse -> Unit
         }
     }
     if (firstSuccess == null && !receivedServerResult) networkFailure?.let { throw it }

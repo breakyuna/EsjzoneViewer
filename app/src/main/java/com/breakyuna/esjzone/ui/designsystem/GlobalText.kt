@@ -110,21 +110,49 @@ fun GlobalText(
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 private fun convertAnnotatedText(text: AnnotatedString, script: ReaderScript): AnnotatedString {
     if (script == ReaderScript.ORIGINAL) return text
-    val converted = ReaderScriptConverter.convert(text.text, script)
-    val offsets = HashMap<Int, Int>()
-    fun offset(index: Int): Int = offsets.getOrPut(index) {
-        ReaderScriptConverter.convert(text.text.substring(0, index), script).length
+    val mapping = ReaderScriptConverter.mapping(text.text, script)
+    val startOffsets = HashMap<Int, Int>()
+    val endOffsets = HashMap<Int, Int>()
+    fun startOffset(index: Int): Int = startOffsets.getOrPut(index) {
+        val clamped = index.coerceIn(0, mapping.sourceLength)
+        var lo = 0
+        var hi = mapping.text.length
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            if (mapping.sourceEnds[mid] > clamped) hi = mid else lo = mid + 1
+        }
+        lo
     }
-    return AnnotatedString.Builder(converted).apply {
-        text.spanStyles.forEach { addStyle(it.item, offset(it.start), offset(it.end)) }
-        text.paragraphStyles.forEach { addStyle(it.item, offset(it.start), offset(it.end)) }
-        text.getStringAnnotations(0, text.length).forEach { addStringAnnotation(it.tag, it.item, offset(it.start), offset(it.end)) }
-        text.getTtsAnnotations(0, text.length).forEach { addTtsAnnotation(it.item, offset(it.start), offset(it.end)) }
-        text.getUrlAnnotations(0, text.length).forEach { addUrlAnnotation(it.item, offset(it.start), offset(it.end)) }
+    fun endOffset(start: Int, end: Int): Int {
+        if (end <= start) return startOffset(start)
+        val mappedEnd = endOffsets.getOrPut(end) {
+            val clamped = end.coerceIn(0, mapping.sourceLength)
+            var lo = 0
+            var hi = mapping.text.length
+            while (lo < hi) {
+                val mid = (lo + hi) ushr 1
+                if (mapping.sourceStarts[mid] >= clamped) hi = mid else lo = mid + 1
+            }
+            lo
+        }
+        return mappedEnd.coerceAtLeast(startOffset(start))
+    }
+    return AnnotatedString.Builder(mapping.text).apply {
+        text.spanStyles.forEach { addStyle(it.item, startOffset(it.start), endOffset(it.start, it.end)) }
+        text.paragraphStyles.forEach { addStyle(it.item, startOffset(it.start), endOffset(it.start, it.end)) }
+        text.getStringAnnotations(0, text.length).forEach {
+            addStringAnnotation(it.tag, it.item, startOffset(it.start), endOffset(it.start, it.end))
+        }
+        text.getTtsAnnotations(0, text.length).forEach {
+            addTtsAnnotation(it.item, startOffset(it.start), endOffset(it.start, it.end))
+        }
+        text.getUrlAnnotations(0, text.length).forEach {
+            addUrlAnnotation(it.item, startOffset(it.start), endOffset(it.start, it.end))
+        }
         text.getLinkAnnotations(0, text.length).forEach {
             when (val link = it.item) {
-                is LinkAnnotation.Url -> addLink(link, offset(it.start), offset(it.end))
-                is LinkAnnotation.Clickable -> addLink(link, offset(it.start), offset(it.end))
+                is LinkAnnotation.Url -> addLink(link, startOffset(it.start), endOffset(it.start, it.end))
+                is LinkAnnotation.Clickable -> addLink(link, startOffset(it.start), endOffset(it.start, it.end))
                 else -> Unit
             }
         }

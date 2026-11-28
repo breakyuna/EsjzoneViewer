@@ -490,6 +490,7 @@ private fun TabStackDisplay(
     val suppressNavigation = remember(tabId, suppressionState) {
         { suppressed: Boolean -> suppressionState[tabId] = suppressed }
     }
+    val sessionGeneration = LocalAuthorizationSessionGeneration.current
     CompositionLocalProvider(
         com.breakyuna.esjzone.app.LocalCoverPage provides tabId.name,
         LocalFloatingNavSuppression provides suppressNavigation,
@@ -498,8 +499,9 @@ private fun TabStackDisplay(
     ) {
         com.breakyuna.esjzone.ui.designsystem.AppViewport(modifier) {
             ContainerTransformLayout(Modifier.fillMaxSize()) {
-                NavDisplay(
-                    backStack = stack,
+                key(sessionGeneration) {
+                    NavDisplay(
+                        backStack = stack,
                     modifier = Modifier.fillMaxSize(),
                     onBack = { if (!navigator.pop()) Unit },
                     transitionSpec = {
@@ -543,8 +545,8 @@ private fun TabStackDisplay(
                         entry<AppNavKey.Legacy>(metadata = ::containerTransformMetadata) { key ->
                             Box(Modifier.fillMaxSize().then(contentMotion)) {
                                 // pop() removes the registry entry before the exit motion finishes.
-                                val destination = remember(navigator, key.route) {
-                                    navigator.destination(key.route)
+                                val destination = remember(navigator, key) {
+                                    navigator.destination(key)
                                 }
                                 if (destination != null) {
                                     val containerTarget = ContainerTransformTarget.forKey(key, origin = tabId.route)
@@ -571,6 +573,7 @@ private fun TabStackDisplay(
                         }
                     }
                 )
+                }
             }
         }
     }

@@ -53,6 +53,7 @@ internal object PageResponsePolicy {
     )
 
     private val loginPath = Regex("(?:^|/)my/login(?:[/?#.]|$)", RegexOption.IGNORE_CASE)
+    private val loginPasswordField = Regex("""name\s*=\s*['"]pwd['"]""", RegexOption.IGNORE_CASE)
     private val scriptLoginRedirect = Regex(
         """window\s*\.\s*location\s*\.\s*href\s*=\s*['\"]/?my/login(?:[/?'\"]|$)""",
         RegexOption.IGNORE_CASE
@@ -85,27 +86,25 @@ internal object PageResponsePolicy {
             else PageValidation(false, "missing external chapter content")
         }
 
-        val lower = body.lowercase()
-        val lowerFinalUrl = finalUrl.lowercase()
-        val lowerRequestedUrl = requestedUrl.lowercase()
-        if (loginPath.containsMatchIn(lowerFinalUrl) || looksLikeLoginPage(lower) ||
+        if (loginPath.containsMatchIn(finalUrl) || looksLikeLoginPage(body) ||
             hasScriptLoginRedirect(body)) {
             return PageValidation(false, "login page")
         }
-        if (looksLikeBlockPage(lower)) {
+        if (looksLikeBlockPage(body)) {
             return PageValidation(false, "access challenge or block page")
         }
-        if (contentType?.lowercase()?.let {
-                !it.contains("text/html") && !it.contains("application/xhtml+xml")
+        if (contentType?.let {
+                !it.contains("text/html", ignoreCase = true) &&
+                    !it.contains("application/xhtml+xml", ignoreCase = true)
             } == true) {
             return PageValidation(false, "unexpected content type")
         }
-        if (!lower.contains("<html") || !lower.contains("<body") ||
-            !lower.contains("</body>") || !lower.contains("</html>")) {
+        if (!body.contains("<html", ignoreCase = true) || !body.contains("<body", ignoreCase = true) ||
+            !body.contains("</body>", ignoreCase = true) || !body.contains("</html>", ignoreCase = true)) {
             return PageValidation(false, "not a complete HTML document")
         }
 
-        val hasEsjMarker = hasEsjPageMarker(lower)
+        val hasEsjMarker = hasEsjPageMarker(body)
         if (!hasEsjMarker) return PageValidation(false, "missing ESJ page markers")
 
         val familyValid = when (kind) {
@@ -114,32 +113,54 @@ internal object PageResponsePolicy {
             // Route markers are more stable than a particular section/table nesting.
             // Some current ESJ pages are intentionally empty or use a different
             // template while retaining the same URL family.
-            PageKind.HOME -> lowerRequestedUrl.isHomeRoute() &&
-                (lower.contains("<section") || lower.contains("<main") || lower.contains("<div"))
-            PageKind.FORUM -> (lowerRequestedUrl.contains("/forum") || lower.contains("/forum/")) &&
-                (lower.contains("<table") || lower.contains("<article") ||
-                    lower.contains("thread") || lower.contains("topic"))
+            PageKind.HOME -> requestedUrl.isHomeRoute() &&
+                (body.contains("<section", ignoreCase = true) ||
+                    body.contains("<main", ignoreCase = true) ||
+                    body.contains("<div", ignoreCase = true))
+            PageKind.FORUM -> (requestedUrl.contains("/forum", ignoreCase = true) ||
+                body.contains("/forum/", ignoreCase = true)) &&
+                (body.contains("<table", ignoreCase = true) ||
+                    body.contains("<article", ignoreCase = true) ||
+                    body.contains("thread", ignoreCase = true) ||
+                    body.contains("topic", ignoreCase = true))
             PageKind.COMMUNITY ->
-                (lowerRequestedUrl.contains("/guestbook") || lower.contains("/forum/") ||
-                    lower.contains("/detail/") || lower.contains("comment")) &&
-                (lower.contains("<table") || lower.contains("<section") ||
-                    lower.contains("<article") || lower.contains("comment") || lower.contains("forum"))
-            PageKind.ACCOUNT -> (lowerRequestedUrl.contains("/my/") || lower.contains("/my/") ||
-                lower.contains("<aside") ||
-                lower.contains("profile")) &&
-                (lower.contains("<table") || lower.contains("<section") || lower.contains("<div") ||
-                    lower.contains("<aside") ||
-                    lower.contains("收藏") || lower.contains("history") ||
-                    lower.contains("view"))
-            PageKind.DETAIL -> lowerRequestedUrl.contains("/detail/") &&
-                (lower.contains("/detail/") || lower.contains("id=\"integration\"") ||
-                    lower.contains("book-detail"))
-            PageKind.CHAPTER -> (lowerRequestedUrl.contains("/forum/") || lower.contains("/forum/")) &&
-                (lower.contains("<article") || lower.contains("<section") || lower.contains("<div") ||
-                    lower.contains("comment") || lower.contains("chapter"))
+                (requestedUrl.contains("/guestbook", ignoreCase = true) ||
+                    body.contains("/forum/", ignoreCase = true) ||
+                    body.contains("/detail/", ignoreCase = true) ||
+                    body.contains("comment", ignoreCase = true)) &&
+                (body.contains("<table", ignoreCase = true) ||
+                    body.contains("<section", ignoreCase = true) ||
+                    body.contains("<article", ignoreCase = true) ||
+                    body.contains("comment", ignoreCase = true) ||
+                    body.contains("forum", ignoreCase = true))
+            PageKind.ACCOUNT -> (requestedUrl.contains("/my/", ignoreCase = true) ||
+                body.contains("/my/", ignoreCase = true) ||
+                body.contains("<aside", ignoreCase = true) ||
+                body.contains("profile", ignoreCase = true)) &&
+                (body.contains("<table", ignoreCase = true) ||
+                    body.contains("<section", ignoreCase = true) ||
+                    body.contains("<div", ignoreCase = true) ||
+                    body.contains("<aside", ignoreCase = true) ||
+                    body.contains("收藏") ||
+                    body.contains("history", ignoreCase = true) ||
+                    body.contains("view", ignoreCase = true))
+            PageKind.DETAIL -> requestedUrl.contains("/detail/", ignoreCase = true) &&
+                (body.contains("/detail/", ignoreCase = true) ||
+                    body.contains("id=\"integration\"", ignoreCase = true) ||
+                    body.contains("book-detail", ignoreCase = true))
+            PageKind.CHAPTER -> (requestedUrl.contains("/forum/", ignoreCase = true) ||
+                body.contains("/forum/", ignoreCase = true)) &&
+                (body.contains("<article", ignoreCase = true) ||
+                    body.contains("<section", ignoreCase = true) ||
+                    body.contains("<div", ignoreCase = true) ||
+                    body.contains("comment", ignoreCase = true) ||
+                    body.contains("chapter", ignoreCase = true))
             PageKind.LIST, PageKind.WEEKLY_UPDATE, PageKind.SEARCH ->
-                lower.contains("/detail/") || lower.contains("<table") ||
-                    lower.contains("<section") || lower.contains("<main") || lower.contains("<div")
+                body.contains("/detail/", ignoreCase = true) ||
+                    body.contains("<table", ignoreCase = true) ||
+                    body.contains("<section", ignoreCase = true) ||
+                    body.contains("<main", ignoreCase = true) ||
+                    body.contains("<div", ignoreCase = true)
         }
         return if (familyValid) PageValidation(true) else {
             PageValidation(false, "missing ${kind.name.lowercase()} page markers")
@@ -155,38 +176,28 @@ internal object PageResponsePolicy {
 
     /** Exposed for authorization probes and unit tests without requiring an HTTP call. */
     fun looksLikeBlockedOrLoginPage(body: String, finalUrl: String = ""): Boolean {
-        val lower = body.lowercase()
-        return loginPath.containsMatchIn(finalUrl.lowercase()) ||
-            looksLikeLoginPage(lower) || hasScriptLoginRedirect(body) || looksLikeBlockPage(lower)
+        return loginPath.containsMatchIn(finalUrl) ||
+            looksLikeLoginPage(body) || hasScriptLoginRedirect(body) || looksLikeBlockPage(body)
     }
 
-    private fun looksLikeLoginPage(lowerBody: String): Boolean {
-        val hasPassword = Regex("name\\s*=\\s*['\"]pwd['\"]").containsMatchIn(lowerBody) ||
-            lowerBody.contains("type=\"password\"")
-        return hasPassword && (lowerBody.contains("login") || lowerBody.contains("登录"))
+    private fun looksLikeLoginPage(body: String): Boolean {
+        val hasPassword = loginPasswordField.containsMatchIn(body) ||
+            body.contains("type=\"password\"", ignoreCase = true)
+        return hasPassword && (body.contains("login", ignoreCase = true) || body.contains("登录"))
     }
 
-    private fun looksLikeBlockPage(lowerBody: String): Boolean {
-        val hasSuspiciousMarker = lowerBody.contains("challenge-stage") ||
-            lowerBody.contains("challenge-form") ||
-            lowerBody.contains("cf-turnstile") ||
-            lowerBody.contains("challenge-error") ||
-            lowerBody.contains("cf-error-") ||
-            lowerBody.contains("just a moment") ||
-            lowerBody.contains("attention required") ||
-            lowerBody.contains("access denied") ||
-            lowerBody.contains("403 forbidden") ||
-            lowerBody.contains("cf-chl-") ||
-            lowerBody.contains("turnstile") ||
-            lowerBody.contains("captcha") ||
-            lowerBody.contains("security check") ||
-            lowerBody.contains("rate limited") ||
-            lowerBody.contains("temporarily blocked")
-        if (!hasSuspiciousMarker && hasEsjStructureMarker(lowerBody)) {
+    private fun looksLikeBlockPage(body: String): Boolean {
+        val hasEsjMarker = hasEsjStructureMarker(body)
+        val hasActiveChallengeMarker = body.contains("challenge-stage", ignoreCase = true) ||
+            body.contains("challenge-form", ignoreCase = true) ||
+            body.contains("cf-turnstile", ignoreCase = true) ||
+            body.contains("challenge-error", ignoreCase = true) ||
+            body.contains("cf-error-", ignoreCase = true)
+        if (hasEsjMarker && !hasActiveChallengeMarker) {
             return false
         }
 
-        val document = Jsoup.parse(lowerBody)
+        val document = Jsoup.parse(body)
         // Active challenge elements rendered by Cloudflare Turnstile/Managed Challenges.
         val hasChallengeElement = document.select(
             "#challenge-stage, #challenge-form, .cf-turnstile, #challenge-error-text, .cf-error-title, .cf-error-details, [data-testid=challenge-error]"
@@ -194,10 +205,6 @@ internal object PageResponsePolicy {
         if (hasChallengeElement) {
             return true
         }
-
-        // Do not treat a reflected site hostname or URL path in a WAF error page as proof of
-        // an ESJ document. The WAF classifier needs actual page structure.
-        val hasEsjMarker = hasEsjStructureMarker(lowerBody)
 
         val title = document.title().trim()
         val isWafExclusiveTitle = title.startsWith("Just a moment", ignoreCase = true) ||
@@ -226,27 +233,27 @@ internal object PageResponsePolicy {
         // Challenge implementation markers are meaningful only together with a
         // challenge message and an otherwise non-ESJ document. In particular,
         // /cdn-cgi/challenge-platform/scripts/jsd/main.js is a normal ESJ footer.
-        val hasChallengeStructure = lowerBody.contains("cf-chl-") ||
-            lowerBody.contains("/cdn-cgi/challenge-platform/") ||
-            lowerBody.contains("challenge-form") ||
-            lowerBody.contains("challenge-stage")
+        val hasChallengeStructure = body.contains("cf-chl-", ignoreCase = true) ||
+            body.contains("/cdn-cgi/challenge-platform/", ignoreCase = true) ||
+            body.contains("challenge-form", ignoreCase = true) ||
+            body.contains("challenge-stage", ignoreCase = true)
         val securityText = headings + " " + bodyText + " " + titleAndWafDetails
         return !hasEsjMarker && hasChallengeStructure &&
             (challengeMessage.containsMatchIn(securityText) ||
-                (lowerBody.contains("cloudflare") &&
+                (body.contains("cloudflare", ignoreCase = true) &&
                     blockMessage.containsMatchIn(titleAndWafDetails)))
     }
 
-    private fun hasEsjPageMarker(lowerBody: String): Boolean =
-        lowerBody.contains("esjzone") ||
-            hasEsjStructureMarker(lowerBody)
+    private fun hasEsjPageMarker(body: String): Boolean =
+        body.contains("esjzone", ignoreCase = true) ||
+            hasEsjStructureMarker(body)
 
-    private fun hasEsjStructureMarker(lowerBody: String): Boolean =
-        lowerBody.contains("id=\"integration\"") ||
-            lowerBody.contains("class=\"comments-section") ||
-            lowerBody.contains("class=\"book-detail") ||
-            lowerBody.contains("class=\"product-item") ||
-            (lowerBody.contains("<nav") && lowerBody.contains("<section"))
+    private fun hasEsjStructureMarker(body: String): Boolean =
+        body.contains("id=\"integration\"", ignoreCase = true) ||
+            body.contains("class=\"comments-section", ignoreCase = true) ||
+            body.contains("class=\"book-detail", ignoreCase = true) ||
+            body.contains("class=\"product-item", ignoreCase = true) ||
+            (body.contains("<nav", ignoreCase = true) && body.contains("<section", ignoreCase = true))
 
     private fun String.isHomeRoute(): Boolean =
         substringAfter("//", "").substringAfter('/', "").substringBefore('?').substringBefore('#')

@@ -12,8 +12,8 @@ import com.breakyuna.esjzone.network.CacheDiagnostics
 import com.breakyuna.esjzone.network.CacheEventType
 import com.breakyuna.esjzone.network.CacheLayer
 import com.breakyuna.esjzone.network.CacheEventReason
-import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.PageKind
+import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.NetworkRequestException
 import com.breakyuna.esjzone.network.NetworkHttpException
 import com.breakyuna.esjzone.novellibrary.community.FORUM_GROUP_ESJ
@@ -61,6 +61,17 @@ private val CSS_IMAGE_URL = Regex(
     """url\(\s*['"]?([^'")]+)['"]?\s*\)""",
     RegexOption.IGNORE_CASE
 )
+private val FLOOR_NUMBER_REGEX = Regex("#[0-9]+")
+private val CATEGORY_POST_COUNT_REGEX = Regex("(?:文章|貼文|帖子|主題)[：:]?\\s*([0-9,]+)")
+private val THREAD_TOPIC_COUNT_REGEX = Regex("主題[：:]?\\s*([0-9,]+)")
+private val THREAD_REPLY_COUNT_REGEX = Regex("回覆[：:]?\\s*([0-9,]+)")
+private val LAST_POST_DATE_REGEX = Regex("最後發表[：:]?\\s*(.+)$")
+private val ISO_DATETIME_WITH_SECONDS_REGEX = Regex(".*[T ]\\d{1,2}:\\d{2}:\\d{2}.*")
+private val VISIBLE_DATE_REGEX = Regex("\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}")
+private val PLACEHOLDER_IMAGE_REGEX = Regex(
+    "(?:^|/)(?:blank|spacer|loading|avatar-placeholder)\\.(?:gif|png|jpg|jpeg|webp)$"
+)
+private val WHITESPACE_REGEX = Regex("\\s+")
 private val communitySelector: HtmlSelector = JsoupHtmlSelector
 
 data class CommentSubmission(
@@ -131,9 +142,8 @@ internal fun EsjzoneClient.getCachedCommentPageSnapshot(
 ): CommentPageSnapshot? {
     val targetUrl = EsjzoneUrls.resolve(pageUrl).substringBefore('#')
     val cacheKey = pageCacheKey(authorization, targetUrl)
-    val html = PageCache.readStale(cacheKey) ?: return null
-    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.COMMUNITY).trusted) return null
-    return parseCommentPageSnapshot(Jsoup.parse(html, targetUrl), targetUrl).also {
+    val document = readUsableCachedCommunityDocument(cacheKey, targetUrl) ?: return null
+    return parseCommentPageSnapshot(document, targetUrl).also {
         CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.DISK, cacheKey)
     }
 }
@@ -394,7 +404,7 @@ internal fun localCommentSubmission(
         authorUrl = null,
         // This is a local estimate until a subsequent refresh retrieves the server badge.
         floor = previousComments.lastOrNull()?.floor?.trim()
-            ?.takeIf { it.matches(Regex("#[0-9]+")) }
+            ?.takeIf { it.matches(FLOOR_NUMBER_REGEX) }
             ?.substring(1)?.toLongOrNull()
             ?.takeIf { it < Long.MAX_VALUE }
             ?.let { "#${it + 1}" },
@@ -527,7 +537,7 @@ internal fun parseForumCategories(document: Document): List<ForumCategory> {
                 groupName = resolvedGroup,
                 name = name,
                 description = description,
-                postCount = extractNumber(container?.text().orEmpty(), "(?:文章|貼文|帖子|主題)"),
+                postCount = extractNumber(container?.text().orEmpty(), CATEGORY_POST_COUNT_REGEX),
                 url = rawUrl
             )
         }
@@ -574,9 +584,9 @@ internal fun parseForumThreads(document: Document): List<ForumThread> =
             categoryId = match.groupValues[1],
             id = match.groupValues[2],
             title = anchor.text().trim().ifBlank { return@mapNotNull null },
-            topicCount = extractNumber(descriptionText, "主題"),
-            replyCount = extractNumber(descriptionText, "回覆"),
-            lastPostDate = Regex("最後發表[：:]?\\s*(.+)$")
+            topicCount = extractNumber(descriptionText, THREAD_TOPIC_COUNT_REGEX),
+            replyCount = extractNumber(descriptionText, THREAD_REPLY_COUNT_REGEX),
+            lastPostDate = LAST_POST_DATE_REGEX
                 .find(descriptionText)
                 ?.groupValues
                 ?.getOrNull(1)
@@ -776,9 +786,8 @@ internal fun EsjzoneClient.getCachedForumPost(
 ): ForumPost? {
     val targetUrl = EsjzoneUrls.resolve(topic.url).substringBefore('#')
     val cacheKey = pageCacheKey(authorization, targetUrl)
-    val html = PageCache.readStale(cacheKey) ?: return null
-    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.COMMUNITY).trusted) return null
-    return parseForumPost(Jsoup.parse(html, targetUrl), topic).also {
+    val document = readUsableCachedCommunityDocument(cacheKey, targetUrl) ?: return null
+    return parseForumPost(document, topic).also {
         CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.DISK, cacheKey)
     }
 }
@@ -1020,7 +1029,7 @@ internal fun parseComments(document: Document, parentPostId: String): List<Comme
     val commentElements = sections
         .flatMap { communitySelector.select(it, ".comment") }
         .ifEmpty { communitySelector.select(document, ".comment") }
-        .distinctBy { it.id().ifBlank { it.outerHtml().hashCode().toString() } }
+        .distinctBy { it.id().ifBlank { System.identityHashCode(it).toString() } }
 
     for (element in commentElements) {
         val content = element.selectFirst(".comment-text, .comment-content")
@@ -1134,8 +1143,8 @@ private fun resolveCommentTimestamp(element: Element): String? {
         // When a machine-generated datetime contains seconds that are not
         // shown by the site, retain the visible date rather than inventing
         // precision the user never saw.
-        val prefersVisibleText = attributeValues.any { it.matches(Regex(".*[T ]\\d{1,2}:\\d{2}:\\d{2}.*")) } &&
-            visibleText.matches(Regex("\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}"))
+        val prefersVisibleText = attributeValues.any { it.matches(ISO_DATETIME_WITH_SECONDS_REGEX) } &&
+            visibleText.matches(VISIBLE_DATE_REGEX)
         val rawValues = if (prefersVisibleText) {
             sequenceOf(visibleText) + attributeValues.asSequence()
         } else {
@@ -1173,7 +1182,7 @@ private fun isUsableImageUrl(url: String): Boolean {
         !normalized.startsWith("javascript:") &&
         !normalized.startsWith("about:") &&
         normalized != "#" &&
-        !Regex("(?:^|/)(?:blank|spacer|loading|avatar-placeholder)\\.(?:gif|png|jpg|jpeg|webp)$")
+        !PLACEHOLDER_IMAGE_REGEX
             .containsMatchIn(normalized)
 }
 
@@ -1207,15 +1216,15 @@ private fun forumGroupName(table: Element): String? {
     return null
 }
 
-private fun extractNumber(text: String, label: String): Int? =
-    Regex("$label[：:]?\\s*([0-9,]+)")
+private fun extractNumber(text: String, pattern: Regex): Int? =
+    pattern
         .find(text)
         ?.groupValues
         ?.getOrNull(1)
         ?.replace(",", "")
         ?.toIntOrNull()
 
-private fun String.normalizedWhitespace(): String = trim().replace(Regex("\\s+"), " ")
+private fun String.normalizedWhitespace(): String = trim().replace(WHITESPACE_REGEX, " ")
 
 internal fun findCreatedComment(
     comments: List<Comment>,
@@ -1229,6 +1238,21 @@ internal fun findCreatedComment(
                 rendered == normalizedContent || rendered.endsWith(normalizedContent)
             }
     }
+}
+
+private fun readUsableCachedCommunityDocument(cacheKey: String, targetUrl: String): Document? {
+    val entry = PageCache.readEntry(cacheKey) ?: return null
+    val html = entry.body
+    val valid = if (entry.validated) {
+        html.isNotBlank() && html.contains("<html", ignoreCase = true)
+    } else {
+        PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.COMMUNITY).trusted
+    }
+    if (!valid) {
+        PageCache.remove(cacheKey, CacheEventReason.INVALID_DATA)
+        return null
+    }
+    return Jsoup.parse(html, targetUrl)
 }
 
 private fun looksLikeLoginDocument(body: String): Boolean {

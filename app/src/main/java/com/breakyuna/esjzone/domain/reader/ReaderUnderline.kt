@@ -1,6 +1,7 @@
 package com.breakyuna.esjzone.domain.reader
 
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import java.security.MessageDigest
 
 /**
@@ -40,8 +41,23 @@ object ReaderUnderlines {
     private val gson = Gson()
     private val signaturePattern = Regex("[0-9a-f]{64}")
     private val blankLine = Regex("\\r?\\n[\\t\\x0B\\f\\p{Zs}]*\\r?\\n")
-    fun signature(block: ReaderBlock, renderedText: String): String = MessageDigest.getInstance("SHA-256")
-        .digest("$block\u0000$renderedText".toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    private val sha256Digest = ThreadLocal.withInitial { MessageDigest.getInstance("SHA-256") }
+    private val HEX_CHARS = "0123456789abcdef".toCharArray()
+    fun signature(block: ReaderBlock, renderedText: String): String {
+        val md = sha256Digest.get()!!
+        md.reset()
+        md.update(block.toString().toByteArray(Charsets.UTF_8))
+        md.update(0.toByte())
+        md.update(renderedText.toByteArray(Charsets.UTF_8))
+        val bytes = md.digest()
+        val chars = CharArray(bytes.size * 2)
+        for (i in bytes.indices) {
+            val v = bytes[i].toInt() and 0xFF
+            chars[i * 2] = HEX_CHARS[v ushr 4]
+            chars[i * 2 + 1] = HEX_CHARS[v and 0x0F]
+        }
+        return String(chars)
+    }
     /** Equals the legacy signature of an untransformed block, whose offsets were already original. */
     fun sourceSignature(block: ReaderBlock): String = signature(block, block.sourceText())
 
@@ -87,10 +103,11 @@ object ReaderUnderlines {
         reanchor: (ReaderUnderline) -> ReaderUnderline?,
         renderings: (ReaderBlock) -> List<ReaderTextOffsets>): List<ReaderUnderline> {
         var changed = false
+        val sourceSignatures = HashMap<Int, String>()
         val migrated = rows.map { mark ->
             val ranges = mark.ranges().map { range ->
                 val block = blocks.getOrNull(range.blockIndex) ?: return@map range
-                val source = sourceSignature(block)
+                val source = sourceSignatures.getOrPut(range.blockIndex) { sourceSignature(block) }
                 if (range.signature == source) return@map range
                 val rendering = renderings(block).firstOrNull {
                     range.end <= it.text.length && signature(block, it.text) == range.signature
@@ -103,7 +120,9 @@ object ReaderUnderlines {
             }
             val updated = fromRanges(ranges, mark.quote, mark.info)
             val allMatched = updated.ranges().all { range ->
-                blocks.getOrNull(range.blockIndex)?.let { sourceSignature(it) == range.signature } == true
+                blocks.getOrNull(range.blockIndex)?.let { block ->
+                    sourceSignatures.getOrPut(range.blockIndex) { sourceSignature(block) } == range.signature
+                } == true
             }
             if (allMatched) updated else reanchor(updated)?.also { changed = true } ?: updated
         }
@@ -126,30 +145,33 @@ object ReaderUnderlines {
         ReaderUnderlineAnchors(blocks).resolve(mark)
 
     /** True when a range needs offset migration or can be re-anchored by its saved quote. */
-    fun hasLegacyRanges(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>): Boolean = rows.any { mark ->
-        mark.ranges().any { range ->
-            val block = blocks.getOrNull(range.blockIndex)
-            if (block == null) !mark.quote.isNullOrBlank() else sourceSignature(block) != range.signature
+    fun hasLegacyRanges(rows: List<ReaderUnderline>, blocks: List<ReaderBlock>): Boolean {
+        val sourceSignatures = HashMap<Int, String>()
+        return rows.any { mark ->
+            mark.ranges().any { range ->
+                val block = blocks.getOrNull(range.blockIndex)
+                if (block == null) !mark.quote.isNullOrBlank()
+                else sourceSignatures.getOrPut(range.blockIndex) { sourceSignature(block) } != range.signature
+            }
         }
     }
     fun decode(value: String?): List<ReaderUnderline> {
         if (value == null) return emptyList()
         require(value.isNotBlank()) { "Invalid underline data" }
-        val rows: List<ReaderUnderline?> = requireNotNull(gson.fromJson(value, Array<ReaderUnderline>::class.java)) {
-            "Invalid underline data"
-        }.toList()
-        return rows.map { row ->
-            val mark = requireNotNull(row) { "Invalid underline record" }
-            // Gson can bypass Kotlin constructors, so validate before constructing ranges.
-            require(validRange(mark.blockIndex, mark.signature, mark.start, mark.end)) {
-                "Invalid underline range"
-            }
-            val continuation: List<ReaderUnderlineRange?> = mark.continuation.orEmpty()
-            require(continuation.all { range -> range != null &&
-                validRange(range.blockIndex, range.signature, range.start, range.end) }) {
-                "Invalid underline continuation"
-            }
-            require(mark.ranges().zipWithNext().all { (a, b) -> a.blockIndex < b.blockIndex })
+        val array = JsonParser.parseString(value)
+            .takeIf { it.isJsonArray }?.asJsonArray
+            ?: throw IllegalArgumentException("Invalid underline data")
+        return array.mapNotNull { element ->
+            if (!element.isJsonObject) return@mapNotNull null
+            val mark = runCatching { gson.fromJson(element, ReaderUnderline::class.java) }.getOrNull()
+                ?: return@mapNotNull null
+            // Gson can bypass Kotlin constructors, so validate per record instead of dropping the chapter.
+            if (!validRange(mark.blockIndex, mark.signature, mark.start, mark.end)) return@mapNotNull null
+            val rawContinuation: List<ReaderUnderlineRange?>? = mark.continuation
+            if (rawContinuation != null && rawContinuation.any { range ->
+                    range == null || !validRange(range.blockIndex, range.signature, range.start, range.end)
+                }) return@mapNotNull null
+            if (!mark.ranges().zipWithNext().all { (a, b) -> a.blockIndex < b.blockIndex }) return@mapNotNull null
             mark
         }
     }

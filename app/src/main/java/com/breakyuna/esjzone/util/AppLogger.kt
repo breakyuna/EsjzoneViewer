@@ -11,24 +11,33 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.nio.charset.StandardCharsets
-import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 enum class LogLevel { DEBUG, INFO, WARN, ERROR, CRASH }
 
 private val logSequence = AtomicLong(0L)
+private val LOG_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter
+    .ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+    .withZone(ZoneId.systemDefault())
 
 data class LogEntry(
     val id: Long = logSequence.incrementAndGet(),
@@ -39,7 +48,7 @@ data class LogEntry(
     val stackTrace: String? = null,
     val threadName: String = Thread.currentThread().name
 ) {
-    fun formattedTime(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(timestamp))
+    fun formattedTime(): String = LOG_TIME_FORMATTER.format(Instant.ofEpochMilli(timestamp))
     fun toFormattedString(): String = buildString {
         append("[${formattedTime()}] [${level.name}] [$threadName] [$tag]: $message")
         if (!stackTrace.isNullOrBlank()) append('\n').append(stackTrace)
@@ -53,10 +62,11 @@ object AppLogger {
     private val fileLock = Any()
     private val fileExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "app-log-writer") }
     private val publicExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "public-log-writer") }
-    private val publicWriter = PublicLogWriter()
+    private val publicFlushScheduled = AtomicBoolean(false)
+    private val publicWriter = PublicLogWriter(scheduleFlush = ::schedulePublicFlush)
     private val publicScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var publicLoggingStarted = false
-    private val logList = mutableListOf<LogEntry>()
+    private val logList = ArrayDeque<LogEntry>(MAX_MEMORY_LOGS)
     private val _logsFlow = MutableStateFlow<List<LogEntry>>(emptyList())
     private val _crashReportFlow = MutableStateFlow<String?>(null)
     val logsFlow = _logsFlow.asStateFlow()
@@ -65,6 +75,32 @@ object AppLogger {
     private var crashFile: File? = null
     private var generation = 0L
     @Volatile private var initialized = false
+
+    init {
+        publicScope.launch {
+            _logsFlow.subscriptionCount
+                .map { it > 0 }
+                .distinctUntilChanged()
+                .collect { active -> if (active) refreshLogs() }
+        }
+    }
+
+    fun refreshLogs() {
+        synchronized(stateLock) {
+            _logsFlow.value = logList.toList()
+        }
+    }
+
+    private fun schedulePublicFlush() {
+        if (!publicFlushScheduled.compareAndSet(false, true)) return
+        publicScope.launch {
+            delay(1000L)
+            publicExecutor.execute {
+                publicFlushScheduled.set(false)
+                writePublic { publicWriter.flush() }
+            }
+        }
+    }
 
     fun init(context: Context) = synchronized(fileLock) {
         if (initialized) return@synchronized
@@ -197,9 +233,11 @@ object AppLogger {
 
     private fun synchronizedGeneration(): Long = synchronized(stateLock) { generation }
     private fun addLogEntryLocked(entry: LogEntry) {
-        logList.add(entry)
-        while (logList.size > MAX_MEMORY_LOGS) logList.removeAt(0)
-        _logsFlow.value = logList.toList()
+        logList.addLast(entry)
+        while (logList.size > MAX_MEMORY_LOGS) logList.removeFirst()
+        if (_logsFlow.subscriptionCount.value > 0) {
+            _logsFlow.value = logList.toList()
+        }
     }
     private fun append(text: String) = synchronized(fileLock) {
         try {
@@ -280,30 +318,42 @@ object AppLogger {
     }
     private fun safeThrowable(throwable: Throwable): String = stackTrace(throwable)
     private fun sanitize(input: String): String {
+        if (input.isEmpty()) return input
+        val hasColon = ':' in input
+        val hasEquals = '=' in input
+        val hasAt = '@' in input
+        if (!hasColon && !hasEquals && !hasAt) return input
         var sanitized = input
+        if (hasColon) {
             // Header values are untrusted and may contain several cookies/tokens.
-            .replace(AUTHORIZATION_HEADER_PATTERN) { "${it.groupValues[1]}***" }
-            .replace(COOKIE_HEADER_PATTERN) { "${it.groupValues[1]}***" }
+            sanitized = sanitized
+                .replace(AUTHORIZATION_HEADER_PATTERN) { "${it.groupValues[1]}***" }
+                .replace(COOKIE_HEADER_PATTERN) { "${it.groupValues[1]}***" }
+        }
+        if (hasColon || hasEquals) {
             // Also cover JSON/form fields whose quoted values may contain spaces.
-            .replace(STRUCTURED_SECRET_PATTERN) { match ->
-                val value = match.groupValues[2]
-                val replacement = if (value.length >= 2 &&
-                    value.first() == value.last() &&
-                    (value.first() == '"' || value.first() == '\'')
-                ) {
-                    "${value.first()}***${value.last()}"
-                } else {
-                    "***"
+            sanitized = sanitized
+                .replace(STRUCTURED_SECRET_PATTERN) { match ->
+                    val value = match.groupValues[2]
+                    val replacement = if (value.length >= 2 &&
+                        value.first() == value.last() &&
+                        (value.first() == '"' || value.first() == '\'')
+                    ) {
+                        "${value.first()}***${value.last()}"
+                    } else {
+                        "***"
+                    }
+                    "${match.groupValues[1]}$replacement"
                 }
-                "${match.groupValues[1]}$replacement"
-            }
-            .replace(STRUCTURED_HEADER_PATTERN) { match ->
-                "${match.groupValues[1]}***"
-            }
-            // Finally catch URL-encoded/query and ordinary key=value forms.
-            .replace(PLAIN_SECRET_PATTERN) { "${it.groupValues[1]}${it.groupValues[2]}***" }
-
-        sanitized = sanitized.replace(EMAIL_PATTERN, "<redacted-email>")
+                .replace(STRUCTURED_HEADER_PATTERN) { match ->
+                    "${match.groupValues[1]}***"
+                }
+                // Finally catch URL-encoded/query and ordinary key=value forms.
+                .replace(PLAIN_SECRET_PATTERN) { "${it.groupValues[1]}${it.groupValues[2]}***" }
+        }
+        if (hasAt) {
+            sanitized = sanitized.replace(EMAIL_PATTERN, "<redacted-email>")
+        }
         return sanitized
     }
 

@@ -76,7 +76,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -706,15 +705,13 @@ private fun LocalHistoryCard(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)
         ) {
-            key(cover.image) {
-                AppNovelCover(
-                    coverUrl = cover.source.url,
-                    coverState = cover.source.state,
-                    initialImage = cover.image,
-                    title = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
-                    modifier = Modifier.size(width = coverWidth, height = coverHeight)
-                )
-            }
+            AppNovelCover(
+                coverUrl = cover.source.url,
+                coverState = cover.source.state,
+                initialImage = cover.image,
+                title = validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName),
+                modifier = Modifier.size(width = coverWidth, height = coverHeight)
+            )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                 Text(validNovelTitle(activity.novelName, activity.novelId, activity.novelUrl, activity.chapterName).ifBlank { stringResource(R.string.download_unknown_novel) }, style = AppTypography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(activity.chapterName, style = AppTypography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -815,17 +812,21 @@ private fun CloudHistoryContent(
                             val domain by PresentationAccess.settings.domain
                             val chapterUrl = history.chapter.url
                             val chapterList = detail.chapterList
-                            val chapterIndex = remember(chapterList, chapterUrl, domain) { mutableStateOf<Int?>(null) }
-                            LaunchedEffect(chapterIndex) {
-                                chapterIndex.value = withContext(Dispatchers.Default) {
-                                    cloudHistoryChapterIndex(chapterList.orderedChapters, chapterUrl)
+                            val chapterIndexMap = remember(chapterList, domain) {
+                                buildMap(chapterList.orderedChapters.size) {
+                                    chapterList.orderedChapters.forEachIndexed { index, chapter ->
+                                        putIfAbsent(EsjzoneUrls.canonicalPageKey(chapter.url), index)
+                                    }
                                 }
+                            }
+                            val chapterIndex = remember(chapterIndexMap, chapterUrl) {
+                                chapterIndexMap[EsjzoneUrls.canonicalPageKey(chapterUrl)]
                             }
                             CloudHistoryCard(
                                 modifier = Modifier.animateItem(),
                                 history = history,
                                 coverUrl = detail.coverUrl,
-                                chapterIndex = chapterIndex.value,
+                                chapterIndex = chapterIndex,
                                 totalChapters = detail.chapterList.orderedChapters.size,
                                 editing = editing,
                                 selected = history.vid in selected,
@@ -836,7 +837,7 @@ private fun CloudHistoryContent(
                                     } else {
                                         val chapterOrder = detail.chapterList.orderedChapters
                                             .takeIf { chapters ->
-                                                chapterIndex.value?.let { index -> chapters.getOrNull(index) }?.let {
+                                                chapterIndex?.let { index -> chapters.getOrNull(index) }?.let {
                                                     chapterIdentity(it) == chapterIdentity(history.chapter)
                                                 } == true
                                             }
@@ -1063,6 +1064,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
     private var observeStarted = false
     private var observeJob: Job? = null
     private val coverPermits = Semaphore(2)
+    private val adultStatusPermits = Semaphore(3)
     private val detailCovers = mutableMapOf<String, Pair<Long, CoverSource>>()
     val adultStatusFailures = mutableStateMapOf<String, LoadFailureKind>()
     private val adultStatusJobs = mutableMapOf<String, Job>()
@@ -1073,7 +1075,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
         adultStatusFailures.remove(activity.activityId)
         adultStatusJobs[activity.activityId] = viewModelScope.launch {
             try {
-                coverPermits.withPermit {
+                adultStatusPermits.withPermit {
                     val status = withContext(Dispatchers.IO) {
                         require(target.isNotBlank())
                         try {
@@ -1118,6 +1120,7 @@ class LocalHistoryPageModel(private val authorization: Authorization) : AppState
                     activities = PresentationAccess.database.localReadingActivityDao().observeAll(),
                     downloadChanges = PresentationAccess.downloads.changes,
                     storageWorkAllowed = com.breakyuna.esjzone.app.ReaderStartupWork.allowed,
+                    progressVersionFor = PresentationAccess.downloads::progressVersionFor,
                     refreshProgress = { rows ->
                         withContext(Dispatchers.IO) {
                             rows.map { activity ->

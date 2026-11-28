@@ -49,9 +49,7 @@ class ReaderUnderlinesTest {
     @Test fun removalPreservesUnselectedMarksAndChapterTextChangesInvalidateIdentity() {
         assertEquals(listOf(mark(6, 9)), ReaderUnderlines.update(listOf(mark(1, 4), mark(6, 9)), mark(2, 3), true))
         assertNotEquals(signature, ReaderUnderlines.signature(ReaderBlock.Text("原文已修改"), "原文已修改"))
-        assertThrows(IllegalArgumentException::class.java) {
-            ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(mark(-1, 4))))
-        }
+        assertTrue(ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(mark(-1, 4)))).isEmpty())
     }
 
     @Test fun changedRenderedTextDoesNotReuseOffsetsFromAnotherScript() {
@@ -64,19 +62,18 @@ class ReaderUnderlinesTest {
             ReaderUnderline(0, original, 1, 2), ReaderUnderline(0, simplified, 1, 2)))
     }
 
-    @Test fun decodeTreatsMissingAsEmptyAndRejectsInvalidOrMalformedRecords() {
+    @Test fun decodeTreatsMissingAsEmptySkipsInvalidEntriesAndRejectsMalformedRoot() {
         assertTrue(ReaderUnderlines.decode(null).isEmpty())
         assertTrue(ReaderUnderlines.decode("[]").isEmpty())
         for (value in listOf("", " \n\t", "null")) {
             assertThrows(IllegalArgumentException::class.java) { ReaderUnderlines.decode(value) }
         }
         assertThrows(com.google.gson.JsonParseException::class.java) { ReaderUnderlines.decode("{") }
+        val valid = mark(1, 4)
         val reordered = mark(0, 2, 2).copy(continuation = listOf(ReaderUnderlineRange(1, signature, 0, 2)))
         val repeated = mark(0, 2).copy(continuation = listOf(ReaderUnderlineRange(0, signature, 1, 3)))
         for (invalid in listOf(reordered, repeated)) {
-            assertThrows(IllegalArgumentException::class.java) {
-                ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(invalid)))
-            }
+            assertEquals(listOf(valid), ReaderUnderlines.decode(ReaderUnderlines.encode(listOf(invalid, valid))))
         }
     }
 

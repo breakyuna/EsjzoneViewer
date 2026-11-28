@@ -15,10 +15,14 @@ import com.breakyuna.esjzone.novellibrary.novel.analyseDescription
 import com.breakyuna.esjzone.novellibrary.novel.preview
 import com.breakyuna.esjzone.util.AppLogger
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+
+private val TYPE_LABEL_PREFIX_REGEX = Regex("^[^：:]+[：:]\\s*")
 
 suspend fun EsjzoneClient.getHomeData(
     authorization: Authorization,
@@ -36,12 +40,13 @@ suspend fun EsjzoneClient.getHomeData(
             pageKind = PageKind.HOME
         ) }
     }
-    val previousWeekly = HomeDataCache.readSnapshot(authorization)?.weeklyUpdates.orEmpty()
+    val cachedSnapshot = HomeDataCache.readSnapshot(authorization)
+    val previousWeekly = cachedSnapshot?.weeklyUpdates.orEmpty()
     var weeklyFailure: com.breakyuna.esjzone.network.LoadFailureKind? = null
     val weeklyUpdatesDeferred = async {
         try {
             cancellablePageRequest { getWeeklyUpdates(authorization, forceRefresh = forceRefresh) }
-        } catch (error: kotlinx.coroutines.CancellationException) {
+        } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             AppLogger.w("GetHomeData", "Error parsing weekly updates", error)
@@ -53,63 +58,23 @@ suspend fun EsjzoneClient.getHomeData(
     val responseBody = homeDeferred.await()
     val document = Jsoup.parse(responseBody)
 
-    val recentlyUpdateTranslatedNovels = mutableListOf<CoveredNovel>()
-    val recentlyUpdateOriginalNovels = mutableListOf<CoveredNovel>()
-    val recentlyUpdateTranslatedR18Novels = mutableListOf<CoveredNovel>()
-    val recentlyUpdateOriginalR18Novels = mutableListOf<CoveredNovel>()
-    val recommendationNovels = mutableListOf<CoveredNovel>()
-
-    try {
-        for (recentlyUpdateTranslatedData in selectHomeSectionCards(document, HomeSection.TRANSLATED)) {
-            recentlyUpdateTranslatedNovels.add(
-                parseNovelCard(recentlyUpdateTranslatedData, false, NovelCardLayout.HOME)
-            )
-        }
-    } catch (e: Exception) {
-        AppLogger.w("GetHomeData", "Error parsing recentlyUpdateTranslatedNovels", e)
-    }
-
-    try {
-        for (recentlyUpdateOriginalData in selectHomeSectionCards(document, HomeSection.ORIGINAL)) {
-            recentlyUpdateOriginalNovels.add(
-                parseNovelCard(recentlyUpdateOriginalData, false, NovelCardLayout.HOME)
-            )
-        }
-    } catch (e: Exception) {
-        AppLogger.w("GetHomeData", "Error parsing recentlyUpdateOriginalNovels", e)
-    }
-
-    try {
-        for (recentlyUpdateTranslatedR18Data in selectHomeSectionCards(document, HomeSection.TRANSLATED_R18)) {
-            recentlyUpdateTranslatedR18Novels.add(
-                parseNovelCard(recentlyUpdateTranslatedR18Data, true, NovelCardLayout.HOME)
-            )
-        }
-    } catch (e: Exception) {
-        AppLogger.w("GetHomeData", "Error parsing recentlyUpdateTranslatedR18Novels", e)
-    }
-
-    try {
-        for (recentlyUpdateOriginalR18Data in selectHomeSectionCards(document, HomeSection.ORIGINAL_R18)) {
-            recentlyUpdateOriginalR18Novels.add(
-                parseNovelCard(recentlyUpdateOriginalR18Data, true, NovelCardLayout.HOME)
-            )
-        }
-    } catch (e: Exception) {
-        AppLogger.w("GetHomeData", "Error parsing recentlyUpdateOriginalR18Novels", e)
-    }
-
-    try {
-        for (recommendationData in selectHomeSectionCards(document, HomeSection.RECOMMENDATION)) {
-            recommendationNovels.add(
-                // parseNovelCard performs the same R18 badge check for every
-                // recommendation card while retaining the original ordering.
-                parseNovelCard(recommendationData, false, NovelCardLayout.HOME)
-            )
-        }
-    } catch (e: Exception) {
-        AppLogger.w("GetHomeData", "Error parsing recommendationNovels", e)
-    }
+    val recentlyUpdateTranslatedNovels = parseHomeSectionCards(
+        document, HomeSection.TRANSLATED, "recentlyUpdateTranslatedNovels", r18 = false
+    )
+    val recentlyUpdateOriginalNovels = parseHomeSectionCards(
+        document, HomeSection.ORIGINAL, "recentlyUpdateOriginalNovels", r18 = false
+    )
+    val recentlyUpdateTranslatedR18Novels = parseHomeSectionCards(
+        document, HomeSection.TRANSLATED_R18, "recentlyUpdateTranslatedR18Novels", r18 = true
+    )
+    val recentlyUpdateOriginalR18Novels = parseHomeSectionCards(
+        document, HomeSection.ORIGINAL_R18, "recentlyUpdateOriginalR18Novels", r18 = true
+    )
+    // parseNovelCard performs the same R18 badge check for every
+    // recommendation card while retaining the original ordering.
+    val recommendationNovels = parseHomeSectionCards(
+        document, HomeSection.RECOMMENDATION, "recommendationNovels", r18 = false
+    )
 
     if (recentlyUpdateTranslatedNovels.isEmpty() &&
         recentlyUpdateOriginalNovels.isEmpty() &&
@@ -129,7 +94,7 @@ suspend fun EsjzoneClient.getHomeData(
     // Reuse already parsed covers without decoding detail files before the first publication.
     // Visible carousel items are enriched separately after the home sections settle.
     val initialPopular = initialWeeklyPopular(
-        popularSeeds, HomeDataCache.readSnapshot(authorization)?.weeklyPopular.orEmpty()
+        popularSeeds, cachedSnapshot?.weeklyPopular.orEmpty()
     )
 
     // Grab weekly updates if already finished
@@ -211,7 +176,7 @@ internal data class WeeklyPopularSeed(
     val url: String
 )
 
-internal fun selectWeeklyPopularSeeds(document: org.jsoup.nodes.Document): List<WeeklyPopularSeed> =
+internal fun selectWeeklyPopularSeeds(document: Document): List<WeeklyPopularSeed> =
     document.select(".widget-categories-hot li")
         .take(10)
         .mapIndexedNotNull { index, item ->
@@ -249,12 +214,12 @@ internal fun EsjzoneClient.enrichWeeklyPopular(
         ".book-description, #description, .description, [data-description]"
     )?.let(::analyseDescription) ?: NovelDescription(emptyList())
     val tags = document.select(
-        ".widget-tags a, .widget-tags a.tag, a.tag[href*='/tags/'], .book-detail .tags a, .book-tags a"
+        ".widget-tags a, a.tag[href*='/tags/'], .book-detail .tags a, .book-tags a"
     ).map { it.text().trim() }
     val parseCount: (String) -> Int = { raw -> raw.filter(Char::isDigit).toIntOrNull() ?: 0 }
     val type = detail.selectFirst("ul li[data-field='type'], ul li")?.text().orEmpty()
         .trim()
-        .replaceFirst(Regex("^[^：:]+[：:]\\s*"), "")
+        .replaceFirst(TYPE_LABEL_PREFIX_REGEX, "")
         .trim()
 
     return WeeklyPopularNovel(
@@ -274,4 +239,31 @@ internal fun EsjzoneClient.enrichWeeklyPopular(
         author = detail.selectFirst("ul li a[href^='/tags/'], a[href^='/tags/']")
             ?.text()?.trim()?.takeIf(String::isNotBlank)
     )
+}
+
+private fun parseHomeSectionCards(
+    document: Document,
+    section: HomeSection,
+    sectionName: String,
+    r18: Boolean
+): List<CoveredNovel> {
+    val cards = try {
+        selectHomeSectionCards(document, section)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        AppLogger.w("GetHomeData", "Error selecting $sectionName", e)
+        return emptyList()
+    }
+    val novels = ArrayList<CoveredNovel>(cards.size)
+    for (card in cards) {
+        try {
+            novels.add(parseNovelCard(card, r18, NovelCardLayout.HOME))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.w("GetHomeData", "Error parsing card in $sectionName", e)
+        }
+    }
+    return novels
 }

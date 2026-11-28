@@ -82,9 +82,23 @@ class ParallelMirrorLoginTest {
     fun definiteServerFailureIsNotMaskedByAnotherMirrorsNetworkFailure() = runBlocking {
         val result = loginMirrorsInParallel(domains, login = { domain ->
             if (domain == domains.first()) LoginAttemptResult.IoFailure(IOException("fixture failure"))
-            else LoginAttemptResult.InvalidResponse
+            else LoginAttemptResult.NonSuccessStatus(403)
         }, onFirstSuccess = { fail("Neither mirror succeeded") })
         assertNull(result)
+    }
+
+    @Test
+    fun invalidResponseDoesNotMaskAnotherMirrorsNetworkFailure() = runBlocking {
+        val error = IOException("fixture failure")
+        try {
+            loginMirrorsInParallel(domains, login = { domain ->
+                if (domain == domains.first()) LoginAttemptResult.IoFailure(error)
+                else LoginAttemptResult.InvalidResponse
+            }, onFirstSuccess = { fail("Neither mirror succeeded") })
+            fail("Expected a network failure")
+        } catch (actual: IOException) {
+            assertEquals(error.message, actual.message)
+        }
     }
 
     @Test

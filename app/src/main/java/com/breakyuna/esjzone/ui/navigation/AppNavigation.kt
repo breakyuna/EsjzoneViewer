@@ -30,6 +30,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -43,8 +45,11 @@ import android.net.Uri
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import java.util.concurrent.atomic.AtomicLong
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.runtime.entryProvider
@@ -138,7 +143,9 @@ sealed interface AppNavKey : NavKey {
     data class Legacy(
         val route: LegacyRoute,
         /** Infinite-pager instance for the home carousel; absent for ordinary novel links. */
-        val homeCarouselPage: Int? = null
+        val homeCarouselPage: Int? = null,
+        /** Distinguishes repeated entries for the same route in Navigation 3 state/ViewModel stores. */
+        val instanceId: Long = 0L
     ) : AppNavKey
 
     @Serializable
@@ -251,6 +258,29 @@ interface AppTab : AppDestination {
     val options: AppTabOptions
 }
 
+internal val LocalAuthorizationSessionGeneration = compositionLocalOf { 0L }
+
+private val legacyInstanceCounter = AtomicLong(System.currentTimeMillis() shl 16)
+
+private class SessionScopedViewModelHolder : ViewModel() {
+    private var currentGeneration: Long? = null
+    private val store = ViewModelStore()
+
+    fun ownerFor(generation: Long): ViewModelStoreOwner {
+        if (currentGeneration != generation) {
+            store.clear()
+            currentGeneration = generation
+        }
+        return object : ViewModelStoreOwner {
+            override val viewModelStore: ViewModelStore = store
+        }
+    }
+
+    override fun onCleared() {
+        store.clear()
+    }
+}
+
 /**
  * Small state model base replacing the previous third-party screen model.
  * ViewModel lifetime is supplied by Navigation 3's ViewModel entry decorator.
@@ -297,7 +327,7 @@ class AppNavigator internal constructor(
                 AppNavKey.Loading -> registry["LoadingScreen"] ?: LoadingScreen()
                 AppNavKey.Login -> registry["LoginScreen"] ?: LoginScreen
                 AppNavKey.Main -> registry["MainScreen"]
-                is AppNavKey.Legacy -> destination(key.route)
+                is AppNavKey.Legacy -> destination(key)
                 is AppNavKey.Reader -> readerDestination(key.route)
                 else -> null
             }
@@ -309,14 +339,30 @@ class AppNavigator internal constructor(
     internal val root: AppNavigator
         get() = rootNavigator ?: this
 
+    private fun withUniqueInstance(key: AppNavKey, homeCarouselPage: Int? = null): AppNavKey {
+        if (key !is AppNavKey.Legacy) return key
+        var candidate = legacyInstanceCounter.incrementAndGet()
+        while (candidate == 0L || backStack.any { it is AppNavKey.Legacy && it.instanceId == candidate }) {
+            candidate = legacyInstanceCounter.incrementAndGet()
+        }
+        return key.copy(
+            homeCarouselPage = homeCarouselPage ?: key.homeCarouselPage,
+            instanceId = candidate
+        )
+    }
+
+    private fun legacyRegistryKey(key: AppNavKey.Legacy): String =
+        "${key.route.token()}#${key.instanceId}"
+
     fun push(destination: AppDestination, homeCarouselPage: Int? = null) {
         val key = destination.navKey
         if (key is AppNavKey.Reader) {
             root.openReader(destination, key)
             return
         }
-        register(destination)
-        backStack.add(if (key is AppNavKey.Legacy) key.copy(homeCarouselPage = homeCarouselPage) else key)
+        val entryKey = withUniqueInstance(key, homeCarouselPage)
+        register(destination, entryKey)
+        backStack.add(entryKey)
     }
 
     /** Save the latest chapter separately so the live reader entry keeps its ViewModel. */
@@ -326,16 +372,8 @@ class AppNavigator internal constructor(
 
     fun pushIfNotCurrent(destination: AppDestination, homeCarouselPage: Int? = null): Boolean {
         val target = (destination.navKey as? AppNavKey.Legacy)?.route
-        val existingIndex = backStack.indexOfLast { key ->
-            key is AppNavKey.Legacy && key.route == target
-        }
-        if (existingIndex >= 0) {
-            if (existingIndex == backStack.lastIndex) return false
-            val removedList = mutableListOf<NavKey>()
-            while (backStack.lastIndex > existingIndex) {
-                backStack.removeLastOrNull()?.let { removedList.add(it) }
-            }
-            removedList.forEach { cleanupKey(it) }
+        val current = (backStack.lastOrNull() as? AppNavKey.Legacy)?.route
+        if (target != null && current == target) {
             return false
         }
         push(destination, homeCarouselPage)
@@ -371,8 +409,9 @@ class AppNavigator internal constructor(
                 if (key is AppNavKey.Reader) {
                     root.openReader(destination, key)
                 } else {
-                    register(destination)
-                    replaceTop(key)
+                    val entryKey = withUniqueInstance(key)
+                    register(destination, entryKey)
+                    replaceTop(entryKey)
                 }
             }
         }
@@ -394,9 +433,10 @@ class AppNavigator internal constructor(
                 backStack.add(AppNavKey.Main)
             }
             else -> {
-                register(destination)
+                val entryKey = withUniqueInstance(destination.navKey)
+                register(destination, entryKey)
                 backStack.clear()
-                backStack.add(destination.navKey)
+                backStack.add(entryKey)
             }
         }
         oldKeys.forEach { cleanupKey(it) }
@@ -410,31 +450,41 @@ class AppNavigator internal constructor(
         }
     }
 
-    private fun register(destination: AppDestination) {
-        registry[destination.key] = destination
+    private fun register(destination: AppDestination, navKey: AppNavKey? = null) {
+        val registryKey = if (navKey is AppNavKey.Legacy) legacyRegistryKey(navKey) else destination.key
+        registry[registryKey] = destination
     }
 
     private fun cleanupKey(key: NavKey?) {
-        val token = when (key) {
-            is AppNavKey.Legacy -> key.route.token()
-            is AppNavKey.Reader -> readerToken(key.route)
-            else -> null
-        } ?: return
-        val stillInUse = backStack.any {
-            when (it) {
-                is AppNavKey.Legacy -> it.route.token() == token
-                is AppNavKey.Reader -> readerToken(it.route) == token
-                else -> false
+        when (key) {
+            is AppNavKey.Legacy -> {
+                val instanceKey = legacyRegistryKey(key)
+                val stillInUse = backStack.any {
+                    it is AppNavKey.Legacy && legacyRegistryKey(it) == instanceKey
+                }
+                if (!stillInUse) {
+                    registry.remove(instanceKey)
+                }
             }
-        }
-        if (!stillInUse) {
-            registry.remove(token)
-            readerRoutes.remove(token)
+            is AppNavKey.Reader -> {
+                val token = readerToken(key.route)
+                val stillInUse = backStack.any {
+                    it is AppNavKey.Reader && readerToken(it.route) == token
+                }
+                if (!stillInUse) {
+                    registry.remove(token)
+                    readerRoutes.remove(token)
+                }
+            }
+            else -> Unit
         }
     }
 
     internal fun child(stack: MutableList<NavKey>): AppNavigator =
         AppNavigator(stack, registry, root, setAuthorization, readerRoutes)
+
+    internal fun destination(key: AppNavKey.Legacy): AppDestination? =
+        registry[legacyRegistryKey(key)] ?: registry[key.route.token()] ?: key.route.restore()
 
     internal fun destination(route: LegacyRoute): AppDestination? =
         registry[route.token()] ?: route.restore()
@@ -632,14 +682,16 @@ fun AppNavigation() {
     val currentDomain by PresentationAccess.settings.domain
     val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
     val loginSessionRevision = loginSessionChanges[currentDomain] ?: 0L
-    val authorizationState = remember(currentDomain, loginSessionRevision) {
+    val authorizationState = remember {
         mutableStateOf<Authorization?>(null)
     }
     var authorization by authorizationState
-    var sessionRestored by remember(currentDomain, loginSessionRevision) { mutableStateOf(false) }
+    var sessionRestored by remember { mutableStateOf(false) }
+    var sessionGeneration by remember { mutableLongStateOf(0L) }
+    var lastSessionSignature by remember { mutableStateOf<Triple<String, Long, Authorization?>?>(null) }
     LaunchedEffect(currentDomain, loginSessionRevision) {
         com.breakyuna.esjzone.util.AppLogger.i("Startup", "Restoring root session")
-        authorization = withContext(Dispatchers.IO) {
+        val restored = withContext(Dispatchers.IO) {
             try {
                 PresentationAccess.client.restoreAuthorization(currentDomain)
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -649,6 +701,12 @@ fun AppNavigation() {
                 null
             }
         }
+        val nextSignature = Triple(currentDomain, loginSessionRevision, restored)
+        if (sessionRestored && lastSessionSignature != nextSignature) {
+            sessionGeneration += 1L
+        }
+        authorization = restored
+        lastSessionSignature = nextSignature
         sessionRestored = true
         com.breakyuna.esjzone.util.AppLogger.i("Startup", "Root session restored")
     }
@@ -689,7 +747,7 @@ fun AppNavigation() {
             if (completedTitleRepair == request) return@collect
             try {
                 PresentationAccess.client.retainDownloadedNovelDetails(session)
-                com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session)
+                com.breakyuna.esjzone.database.NovelTitleRepository.repairAll(session, force = request > 0L)
                 completedTitleRepair = request
             } catch (error: kotlinx.coroutines.CancellationException) {
                 throw error
@@ -700,8 +758,21 @@ fun AppNavigation() {
     }
     val currentAuthorizationState = rememberUpdatedState(authorizationState)
     val navigator = remember(backStack, registry) {
-        AppNavigator(backStack, registry, setAuthorization = { currentAuthorizationState.value.value = it },
-            readerRoutes = readerRoutes)
+        AppNavigator(
+            backStack,
+            registry,
+            setAuthorization = { updated ->
+                val previous = currentAuthorizationState.value.value
+                currentAuthorizationState.value.value = updated
+                if (sessionRestored && previous != updated) {
+                    sessionGeneration += 1L
+                    val activeDomain = PresentationAccess.settings.domain.value
+                    val activeRevision = PresentationAccess.client.loginSessionChanges.value[activeDomain] ?: 0L
+                    lastSessionSignature = Triple(activeDomain, activeRevision, updated)
+                }
+            },
+            readerRoutes = readerRoutes
+        )
     }
 
     val appContext = LocalContext.current.applicationContext
@@ -745,7 +816,8 @@ fun AppNavigation() {
         // Root-level entries (especially Reader) must see the same session as
         // Main. Reader itself is guarded below when no persisted session exists.
         LocalAutoResumeDecisionFinished provides { autoResumePending = false },
-        LocalAuthorization provides (authorization ?: Authorization("", ""))
+        LocalAuthorization provides (authorization ?: Authorization("", "")),
+        LocalAuthorizationSessionGeneration provides sessionGeneration
     ) {
         androidx.compose.material3.Surface(
             // The root host stays edge-to-edge. Loading/Login own their
@@ -819,10 +891,18 @@ fun AppNavigation() {
                         }
                     }
                     entry<AppNavKey.Legacy> { key ->
-                        val destination = remember(navigator, key.route) {
-                            navigator.destination(key.route)
+                        val holder = rememberAppViewModel { SessionScopedViewModelHolder() }
+                        val scopedOwner = remember(holder, sessionGeneration) {
+                            holder.ownerFor(sessionGeneration)
                         }
-                        destination?.Content(navigator)
+                        CompositionLocalProvider(LocalViewModelStoreOwner provides scopedOwner) {
+                            key(sessionGeneration) {
+                                val destination = remember(navigator, key) {
+                                    navigator.destination(key)
+                                }
+                                destination?.Content(navigator)
+                            }
+                        }
                     }
                 }
             )

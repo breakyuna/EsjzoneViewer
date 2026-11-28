@@ -39,6 +39,7 @@ object HomeDataCache {
 
     @Volatile
     private var memorySnapshot: Pair<String, HomeData>? = null
+    private var snapshotVersion = 0L
 
     @Volatile
     private var storageDir: File? = null
@@ -53,6 +54,7 @@ object HomeDataCache {
             if (storageDir != dir) {
                 memorySnapshot = null
                 lastAccess = 0L
+                snapshotVersion += 1L
             }
             storageDir = dir
             if (memorySnapshot == null) memorySnapshot = loadFromDisk(dir)
@@ -77,20 +79,27 @@ object HomeDataCache {
     }
 
     /** Keep progressive results available without rewriting the complete JSON for every cover. */
-    fun updateMemorySnapshot(authorization: Authorization, data: HomeData, expectedEpoch: Long = PageCache.currentEpoch) {
+    fun updateMemorySnapshot(authorization: Authorization, data: HomeData, expectedEpoch: Long = PageCache.currentEpoch): Long? {
         val normalizedDomain = EsjzoneClient.accountScope(authorization)
-        synchronized(ioLock) {
+        return synchronized(ioLock) {
             if (expectedEpoch != PageCache.currentEpoch) {
                 CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.SUPERSEDED, "home|$normalizedDomain")
-                return
+                return@synchronized null
             }
-            if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
+            if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return@synchronized null
             memorySnapshot = normalizedDomain to data
+            val version = ++snapshotVersion
             CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.HOME, CacheEventReason.MEMORY, "home|$normalizedDomain")
+            version
         }
     }
 
-    fun writeSnapshot(authorization: Authorization, data: HomeData, expectedEpoch: Long = PageCache.currentEpoch) {
+    fun writeSnapshot(
+        authorization: Authorization,
+        data: HomeData,
+        expectedEpoch: Long = PageCache.currentEpoch,
+        expectedVersion: Long? = null
+    ) {
         val normalizedDomain = EsjzoneClient.accountScope(authorization)
         if (normalizedDomain != EsjzoneClient.activeAccountScopeOrNull()) return
         val dir = storageDir ?: runCatching {
@@ -98,7 +107,9 @@ object HomeDataCache {
         }.getOrNull() ?: return
 
         synchronized(ioLock) {
-            if (expectedEpoch != PageCache.currentEpoch) {
+            if (expectedEpoch != PageCache.currentEpoch ||
+                (expectedVersion != null && expectedVersion != snapshotVersion)
+            ) {
                 CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.HOME, CacheEventReason.SUPERSEDED, "home|$normalizedDomain")
                 return
             }
@@ -124,6 +135,7 @@ object HomeDataCache {
                     )
                 }
                 memorySnapshot = normalizedDomain to data
+                snapshotVersion += 1L
                 CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.HOME, CacheEventReason.STORED,
                     "home|$normalizedDomain", bytes = targetFile.length())
             } catch (e: Exception) {
@@ -146,6 +158,7 @@ object HomeDataCache {
                     lastAccess > accessed || memorySnapshot !== snapshot) false
                 else if (file.delete()) {
                     memorySnapshot = null
+                    snapshotVersion += 1L
                     CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HOME, CacheEventReason.CAPACITY, bytes = length)
                     true
                 } else {
@@ -163,6 +176,7 @@ object HomeDataCache {
                 CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.HOME, CacheEventReason.CLEARED, cacheKey)
             }
             memorySnapshot = null
+            snapshotVersion += 1L
             val dir = storageDir ?: EsjzoneApplication.instance.filesDir
             listOf(FILE_NAME, "$FILE_NAME.tmp").forEach { name ->
                 val file = File(dir, name)

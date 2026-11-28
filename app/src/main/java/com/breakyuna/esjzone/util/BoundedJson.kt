@@ -13,7 +13,9 @@ internal object BoundedJson {
     const val MAX_ITEMS = 50_000
     private const val MAX_STRING = 4 * 1024 * 1024
 
-    fun readText(reader: Reader): String {
+    fun readText(reader: Reader): String = readText(reader, validateTokens = true)
+
+    fun readText(reader: Reader, validateTokens: Boolean): String {
         val text = StringBuilder()
         val buffer = CharArray(8192)
         while (true) {
@@ -22,7 +24,9 @@ internal object BoundedJson {
             if (text.length + count > MAX_CHARS) throw IOException("JSON text exceeds size limit")
             text.append(buffer, 0, count)
         }
-        return text.toString().also(::validate)
+        val result = text.toString()
+        if (validateTokens) validate(result)
+        return result
     }
 
     private fun validate(text: String) {

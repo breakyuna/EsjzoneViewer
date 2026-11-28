@@ -183,8 +183,10 @@ class SettingsDataStore(
         // Session/cookie, profile, search and other cache rows are deliberately
         // left untouched. If the process dies before cleanup, the next startup
         // reaches this same branch because the marker is already complete.
-        val isMigrated = runCatching { dataStore.data.first()[MIGRATION_COMPLETE] == true }.getOrDefault(false)
-        if (isMigrated) {
+        val prefs = runCatching { dataStore.data.first() }.getOrNull()
+        val isMigrated = prefs?.get(MIGRATION_COMPLETE) == true
+        val isCleanedUp = prefs?.get(LEGACY_CLEANUP_COMPLETE) == true
+        if (isMigrated && !isCleanedUp) {
             database.cacheDao().deleteByKey("show_adult")
             database.cacheDao().deleteByKey("adult")
             database.cacheDao().deleteByKey("theme")
@@ -193,6 +195,7 @@ class SettingsDataStore(
             database.cacheDao().deleteByKey(READER_AUTO_SAVE_KEY)
             database.cacheDao().deleteByKey(SettingsDefaults.DOWNLOAD_CONCURRENCY_KEY)
             database.cacheDao().deleteByKey(SettingsDefaults.START_TAB_KEY)
+            dataStore.edit { it[LEGACY_CLEANUP_COMPLETE] = true }
         }
     }
 
@@ -277,5 +280,6 @@ class SettingsDataStore(
         val NAVIGATION_ORDER = stringPreferencesKey("navigation_order")
         val START_TAB = stringPreferencesKey("start_tab")
         val MIGRATION_COMPLETE = booleanPreferencesKey("legacy_room_migration_complete")
+        val LEGACY_CLEANUP_COMPLETE = booleanPreferencesKey("legacy_room_cleanup_complete")
     }
 }

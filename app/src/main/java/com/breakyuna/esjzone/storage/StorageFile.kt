@@ -161,14 +161,41 @@ class StorageFile private constructor(
             local.appendText(text, Charsets.UTF_8)
             return
         }
-        if (!exists()) {
+        val currentTree = checkNotNull(tree)
+        val existingUri = currentTree.resolve(relative)
+        if (existingUri == null) {
             check(parentFile?.mkdirs() == true)
-            tree!!.create(relative, "text/plain")
+            currentTree.create(relative, "text/plain")
+            val createdUri = currentTree.resolve(relative)
+                ?: throw IOException("Unable to resolve created storage document")
+            documentAccess {
+                currentTree.context.contentResolver.openOutputStream(createdUri, "wa")
+                    ?.bufferedWriter(Charsets.UTF_8)?.use { it.write(text) }
+                    ?: throw IOException("Unable to append storage document")
+            }
+            return
         }
-        documentAccess {
-            checkNotNull(tree).context.contentResolver.openOutputStream(uri, "wa")
+        try {
+            currentTree.context.contentResolver.openOutputStream(existingUri, "wa")
                 ?.bufferedWriter(Charsets.UTF_8)?.use { it.write(text) }
                 ?: throw IOException("Unable to append storage document")
+        } catch (_: java.io.FileNotFoundException) {
+            currentTree.invalidate(relative)
+            check(parentFile?.mkdirs() == true)
+            currentTree.create(relative, "text/plain")
+            val recreatedUri = currentTree.resolve(relative)
+                ?: throw IOException("Unable to resolve created storage document")
+            documentAccess {
+                currentTree.context.contentResolver.openOutputStream(recreatedUri, "wa")
+                    ?.bufferedWriter(Charsets.UTF_8)?.use { it.write(text) }
+                    ?: throw IOException("Unable to append storage document")
+            }
+        } catch (error: SecurityException) {
+            throw StorageAccessException(error)
+        } catch (error: IllegalArgumentException) {
+            throw StorageAccessException(error)
+        } catch (error: IOException) {
+            throw if (error is StorageAccessException) error else StorageAccessException(error)
         }
     }
     fun storedTextReader(): java.io.BufferedReader {
@@ -396,10 +423,7 @@ class StorageFile private constructor(
         }
         fun metadata(path: String): Metadata? {
             metadataSnapshot.get()?.get(path)?.let { return it }
-            val uri = resolve(path) ?: run {
-                if (path.isNotEmpty()) metadata("")
-                return null
-            }
+            val uri = resolve(path) ?: return null
             // Resolving an unknown URI may have just listed its parent and supplied metadata.
             metadataSnapshot.get()?.get(path)?.let { return it }
             return documentAccess {

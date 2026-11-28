@@ -178,8 +178,8 @@ class EsjzoneUrlsTest {
     @Test
     fun detailBoundaryRejectsAccountPathsAndUntrustedAuthorities() {
         val base = "https://www.esjzone.cc/"
-        listOf("/my/logout", "/detail/12.html?next=/my/logout", "/detail/12.html#x",
-            "https://www.esjzone.cc:444/detail/12.html", "http://www.esjzone.cc/detail/12.html",
+        listOf("/my/logout",
+            "https://www.esjzone.cc:444/detail/12.html",
             "https://user@www.esjzone.cc/detail/12.html", "https://evil.test/detail/12.html",
             "https://evil.esjzone.cc/detail/12.html", "/detail/12%2f34.html").forEach {
             assertNull(it, EsjzoneUrls.novelDetailUrl(it, base))
@@ -187,6 +187,12 @@ class EsjzoneUrlsTest {
         assertEquals("https://www.esjzone.cc/detail/12.html", EsjzoneUrls.novelDetailUrl("/detail/12.html", base))
         assertEquals("https://www.esjzone.cc/detail/12.html",
             EsjzoneUrls.novelDetailUrl("https://www.esjzone.one/detail/12.html", base))
+        assertEquals("https://www.esjzone.cc/detail/12.html",
+            EsjzoneUrls.novelDetailUrl("http://www.esjzone.cc/detail/12.html", base))
+        assertEquals("https://www.esjzone.cc/detail/12.html",
+            EsjzoneUrls.novelDetailUrl("/detail/12.html?next=/my/logout", base))
+        assertEquals("https://www.esjzone.cc/detail/12.html",
+            EsjzoneUrls.novelDetailUrl("/detail/12.html#x", base))
     }
 
     @Test

@@ -257,10 +257,21 @@ internal fun ChapterBody.keepSavedAlignments(recovered: ReaderChapterFormatting)
 internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): ChapterBody {
     val saved = formatting
     if (saved != null) {
+        val rawAlignments: Map<Int, String>? = saved.alignments
+        val rawDividers: List<Int>? = saved.dividersAt
         val savedTitles: Map<Int, Int>? = saved.disclosureTitleParts
+        if (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION &&
+            rawAlignments != null &&
+            rawDividers != null &&
+            savedTitles != null
+        ) {
+            return this
+        }
         val valid = runCatching {
-            saved.alignments.all { (index, alignment) -> index in blocks.indices && alignment in chapterAlignments } &&
-                saved.dividersAt.all { it in 0..blocks.size } &&
+            rawAlignments != null &&
+                rawDividers != null &&
+                rawAlignments.all { (index, alignment) -> index in blocks.indices && alignment in chapterAlignments } &&
+                rawDividers.all { it in 0..blocks.size } &&
                 savedTitles.orEmpty().all { (index, count) ->
                     val block = blocks.getOrNull(index)
                     block?.type == "paragraph" && count in 1..block.parts.size
@@ -272,7 +283,16 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
         }
         if (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION || html.isNullOrBlank()) return this
     }
-    if (html.isNullOrBlank() || !html.hasChapterFormattingMarkup()) return this
+    if (html.isNullOrBlank()) return this
+    fun upgradedFormatting(): ChapterBody {
+        val base = saved ?: ReaderChapterFormatting()
+        val upgraded = base.copy(
+            disclosureTitleParts = base.disclosureTitleParts.orEmpty(),
+            parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION
+        )
+        return if (saved == upgraded) this else copy(formatting = upgraded)
+    }
+    if (!html.hasChapterFormattingMarkup()) return upgradedFormatting()
     val result = runCatching {
         val document = Jsoup.parseBodyFragment(html, baseUrl.orEmpty())
         val recovered = analyseChapterContent(document.body())
@@ -292,12 +312,12 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
                 ReaderBlock.LineBreak -> actual == ReaderBlock.LineBreak
             }
         }
-        if (!matches || (layout.alignments.isEmpty() && layout.dividersAt.isEmpty())) return this
+        if (!matches || (layout.alignments.isEmpty() && layout.dividersAt.isEmpty())) return upgradedFormatting()
         val titles = layout.disclosureTitleParts.mapNotNull { (index, count) ->
             val title = (parsed[index] as ReaderBlock.Paragraph).parts.take(count).joinToString("") { it.value }
             stored[index].leadingTitleParts(title)?.let { index to it }
         }.toMap()
         keepSavedAlignments(layout.copy(disclosureTitleParts = titles))
     }.getOrElse { return this }
-    return if (result == null) this else copy(formatting = result)
+    return copy(formatting = result)
 }

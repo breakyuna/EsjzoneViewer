@@ -10,10 +10,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -125,15 +121,11 @@ internal fun LazyListScope.weeklyPopularCarousel(
         val scope = rememberCoroutineScope()
         val cardWidth = ((minOf(appViewportSize().width, 1280f) - 40f) / 2).dp
         val lifecycleOwner = LocalLifecycleOwner.current
-        var enriching by remember { mutableStateOf(false) }
         LaunchedEffect(enrichmentEnabled, pagerState.settledPage, visible.map { it.url }) {
             if (enrichmentEnabled) {
                 lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-                    enriching = true
-                    try {
-                        onVisible(listOf(visible[pagerState.settledPage % visible.size],
-                            visible[(pagerState.settledPage + 1) % visible.size]).distinctBy { it.url })
-                    } finally { enriching = false }
+                    onVisible(listOf(visible[pagerState.settledPage % visible.size],
+                        visible[(pagerState.settledPage + 1) % visible.size]).distinctBy { it.url })
                 }
             }
         }
@@ -162,7 +154,6 @@ internal fun LazyListScope.weeklyPopularCarousel(
                         }
                         continue
                     }
-                    if (enriching) continue
                     try {
                         pagerState.animateScrollToPage(
                             page = pagerState.currentPage + 1,

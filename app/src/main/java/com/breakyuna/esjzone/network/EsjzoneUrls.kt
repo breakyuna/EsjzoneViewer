@@ -10,6 +10,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object EsjzoneUrls {
 
     private val FORUM_BOARD_PATH = Regex("^/forum/[0-9]+/([0-9]+)$")
+    private val NOVEL_DETAIL_PATH = Regex("^/detail/[0-9]{1,20}\\.html$")
 
     /**
      * Resolves a site link while guaranteeing that the result is an HTTPS HTTP URL.
@@ -24,15 +25,25 @@ object EsjzoneUrls {
     fun novelDetailUrl(rawUrl: String, baseUrl: String = Base): String? {
         val base = baseUrl.toHttpUrlOrNull() ?: return null
         val target = base.resolve(rawUrl.trim()) ?: return null
-        fun trusted(host: String) = SettingsDefaults.DOMAINS.any {
-            it.removePrefix("www.").equals(host.removePrefix("www."), ignoreCase = true)
+        fun trusted(host: String): Boolean {
+            val normalizedHost = host.lowercase().removePrefix("www.")
+            return SettingsDefaults.DOMAINS.any {
+                it.removePrefix("www.").equals(normalizedHost, ignoreCase = true)
+            }
         }
+        val targetDefaultPort = if (target.isHttps) 443 else 80
         if (!base.isHttps || base.port != 443 || !trusted(base.host) ||
-            !target.isHttps || target.port != 443 || !trusted(target.host) ||
+            target.port != targetDefaultPort || !trusted(target.host) ||
             target.username.isNotEmpty() || target.password.isNotEmpty() ||
-            target.encodedQuery != null || target.encodedFragment != null ||
-            !Regex("^/detail/[0-9]{1,20}\\.html$").matches(target.encodedPath)) return null
-        return target.newBuilder().host(base.host).build().toString()
+            !NOVEL_DETAIL_PATH.matches(target.encodedPath)) return null
+        return target.newBuilder()
+            .scheme("https")
+            .port(443)
+            .host(base.host)
+            .query(null)
+            .fragment(null)
+            .build()
+            .toString()
     }
 
     fun isEsjHost(host: String): Boolean {

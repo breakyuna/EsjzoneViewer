@@ -1,15 +1,21 @@
 package com.breakyuna.esjzone.database
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.room.withTransaction
+import com.breakyuna.esjzone.EsjzoneApplication
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.UntrustedPageException
 import com.breakyuna.esjzone.network.cancellablePageRequest
 import com.breakyuna.esjzone.network.features.getNovelDetail
 import com.breakyuna.esjzone.novellibrary.novel.FavoriteNovel
 import com.breakyuna.esjzone.novellibrary.novel.novelTitleId
 import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.util.AppLogger
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -20,12 +26,104 @@ import kotlinx.coroutines.withContext
 
 /** Repairs title metadata only; reading positions, durations and user intents stay intact. */
 object NovelTitleRepository {
+    private const val PREFS_NAME = "novel_title_repair_cache"
+    private const val KEY_LAST_AUTO_SCAN_AT = "last_auto_scan_at"
+    private const val NEGATIVE_PREFIX = "neg:"
+    private const val AUTO_SCAN_COOLDOWN_MS = 24L * 60L * 60L * 1000L
+    private const val PERMANENT_NEGATIVE_COOLDOWN_MS = 7L * 24L * 60L * 60L * 1000L
+    private const val TRANSIENT_BASE_BACKOFF_MS = 60L * 60L * 1000L
+    private const val MAX_TRANSIENT_BACKOFF_SHIFT = 7
+
+    private data class NegativeEntry(
+        val failedAtMs: Long,
+        val failureCount: Int,
+        val permanent: Boolean
+    )
+
     private val requests = MutableStateFlow(0L)
     val repairRequests = requests.asStateFlow()
     private val changes = MutableStateFlow(0L)
     val titleChanges = changes.asStateFlow()
+    private val memoryNegativeCache = ConcurrentHashMap<String, NegativeEntry>()
+    private val memoryLastAutoScanAt = AtomicLong(0L)
 
     fun requestRepair() { requests.update { it + 1L } }
+
+    private fun negativePrefs(): SharedPreferences? = runCatching {
+        EsjzoneApplication.instance.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }.getOrNull()
+
+    private fun negativeKey(novelId: String, novelUrl: String): String {
+        val id = novelTitleId(novelId, novelUrl)
+        if (id.isNotBlank()) return "id:$id"
+        val canonical = EsjzoneUrls.canonicalPageKey(novelUrl).ifBlank { novelUrl.trim() }
+        return "url:$canonical"
+    }
+
+    private fun getNegativeEntry(key: String): NegativeEntry? {
+        memoryNegativeCache[key]?.let { return it }
+        val raw = negativePrefs()?.getString("$NEGATIVE_PREFIX$key", null) ?: return null
+        val parts = raw.split('|')
+        if (parts.size != 3) return null
+        val failedAtMs = parts[0].toLongOrNull() ?: return null
+        val failureCount = parts[1].toIntOrNull()?.coerceAtLeast(1) ?: return null
+        val permanent = parts[2] == "1"
+        return NegativeEntry(failedAtMs, failureCount, permanent).also {
+            memoryNegativeCache.putIfAbsent(key, it)
+        }
+    }
+
+    private fun isNegativelyCached(key: String, now: Long = System.currentTimeMillis()): Boolean {
+        val entry = getNegativeEntry(key) ?: return false
+        if (entry.failedAtMs > now) return false
+        val cooldown = if (entry.permanent) {
+            PERMANENT_NEGATIVE_COOLDOWN_MS
+        } else {
+            val shift = (entry.failureCount - 1).coerceIn(0, MAX_TRANSIENT_BACKOFF_SHIFT)
+            (TRANSIENT_BASE_BACKOFF_MS shl shift).coerceAtMost(PERMANENT_NEGATIVE_COOLDOWN_MS)
+        }
+        return now - entry.failedAtMs < cooldown
+    }
+
+    private fun recordNegativeFailure(
+        key: String,
+        permanent: Boolean,
+        now: Long = System.currentTimeMillis()
+    ) {
+        val previous = getNegativeEntry(key)
+        val count = ((previous?.failureCount ?: 0) + 1).coerceAtMost(MAX_TRANSIENT_BACKOFF_SHIFT + 1)
+        val isPermanent = permanent || (previous?.permanent == true)
+        val next = NegativeEntry(now, count, isPermanent)
+        memoryNegativeCache[key] = next
+        negativePrefs()?.edit()
+            ?.putString("$NEGATIVE_PREFIX$key", "$now|$count|${if (isPermanent) 1 else 0}")
+            ?.apply()
+    }
+
+    private fun clearNegativeEntry(key: String) {
+        memoryNegativeCache.remove(key)
+        negativePrefs()?.edit()?.remove("$NEGATIVE_PREFIX$key")?.apply()
+    }
+
+    private fun getLastAutoScanAt(): Long {
+        val cached = memoryLastAutoScanAt.get()
+        if (cached > 0L) return cached
+        val persisted = negativePrefs()?.getLong(KEY_LAST_AUTO_SCAN_AT, 0L) ?: 0L
+        if (persisted > 0L) memoryLastAutoScanAt.compareAndSet(0L, persisted)
+        return persisted
+    }
+
+    private fun recordLastAutoScanAt(timestamp: Long) {
+        memoryLastAutoScanAt.set(timestamp)
+        negativePrefs()?.edit()?.putLong(KEY_LAST_AUTO_SCAN_AT, timestamp)?.apply()
+    }
+
+    private fun isPermanentLookupFailure(error: Throwable): Boolean = when (error) {
+        is UntrustedPageException ->
+            error.validation.reason == "HTTP 404" || error.validation.reason == "HTTP 410"
+        is IllegalArgumentException -> true
+        else -> false
+    }
 
     suspend fun resolve(authorization: Authorization?, novelId: String, novelUrl: String, name: String = ""): String =
         withContext(Dispatchers.IO) {
@@ -50,15 +148,32 @@ object NovelTitleRepository {
                 .firstNotNullOfOrNull { validNovelTitle(it.bookName, id, url).takeIf(String::isNotBlank) }
                 ?.let { return@withContext it }
             if (authorization == null) return@withContext ""
-            validNovelTitle(cancellablePageRequest {
-                PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel("", url))
-            }.name, id, url)
+            val cacheKey = negativeKey(id, url)
+            if (isNegativelyCached(cacheKey)) return@withContext ""
+            try {
+                val detail = cancellablePageRequest {
+                    PresentationAccess.client.getNovelDetail(authorization, FavoriteNovel("", url))
+                }
+                val resolvedTitle = validNovelTitle(detail.name, id, url)
+                if (resolvedTitle.isNotBlank()) {
+                    clearNegativeEntry(cacheKey)
+                } else {
+                    recordNegativeFailure(cacheKey, permanent = true)
+                }
+                resolvedTitle
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                recordNegativeFailure(cacheKey, permanent = isPermanentLookupFailure(error))
+                throw error
+            }
         }
 
     suspend fun repair(novelId: String, novelUrl: String, name: String) = withContext(Dispatchers.IO) {
         val id = novelTitleId(novelId, novelUrl)
         val title = validNovelTitle(name, id, novelUrl)
         if (title.isBlank()) return@withContext
+        clearNegativeEntry(negativeKey(id, novelUrl))
         val url = EsjzoneUrls.resolve(novelUrl)
         val database = PresentationAccess.database
         try {
@@ -98,7 +213,14 @@ object NovelTitleRepository {
     }
 
     /** Run after session/storage restoration and backup import, including books not opened again. */
-    suspend fun repairAll(authorization: Authorization) = withContext(Dispatchers.IO) {
+    suspend fun repairAll(authorization: Authorization, force: Boolean = true) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (!force) {
+            val lastScan = getLastAutoScanAt()
+            if (lastScan in 1L..now && now - lastScan < AUTO_SCAN_COOLDOWN_MS) {
+                return@withContext
+            }
+        }
         val database = PresentationAccess.database
         val context = kotlinx.coroutines.currentCoroutineContext()
         context.ensureActive()
@@ -131,17 +253,27 @@ object NovelTitleRepository {
         records.filter { it.id.isNotBlank() }.groupBy { it.id }.forEach { (id, rows) ->
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (rows.none { it.name.isBlank() }) return@forEach
-            try {
-                val url = rows.firstOrNull { it.url.isNotBlank() }?.url ?: "/detail/$id.html"
-                val title = resolve(authorization, id, url, rows.firstOrNull { it.name.isNotBlank() }?.name.orEmpty())
+            val url = rows.firstOrNull { it.url.isNotBlank() }?.url ?: "/detail/$id.html"
+            val known = rows.firstNotNullOfOrNull { it.name.takeIf(String::isNotBlank) }.orEmpty()
+            val title = if (known.isNotBlank()) {
+                known
+            } else {
+                val cacheKey = negativeKey(id, url)
+                if (isNegativelyCached(cacheKey)) return@forEach
+                try {
+                    resolve(authorization, id, url)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    AppLogger.w("NovelTitle", "Unable to resolve stored title", error)
+                    ""
+                }
+            }
+            if (title.isNotBlank()) {
                 repair(id, url, title)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                // Failed lookups remain eligible on the next repair request/session.
-                AppLogger.w("NovelTitle", "Unable to resolve stored title", error)
             }
         }
+        recordLastAutoScanAt(System.currentTimeMillis())
     }
 
     private data class StoredTitle(val id: String, val url: String, val name: String)

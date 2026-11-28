@@ -72,8 +72,13 @@ fun EsjzoneClient.getChapterDetail(
     }
 
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
-    if (!forceRefresh) StructuredChapterCache.read(cacheKey, targetUrl)?.let { return it }
-    val previousBody = StructuredChapterCache.read(cacheKey, targetUrl, Long.MAX_VALUE)?.body
+    val previousBody = if (!forceRefresh) {
+        val cached = StructuredChapterCache.readWithFreshness(cacheKey, targetUrl, PageCacheTtl.CHAPTER)
+        if (cached?.isFresh == true) return cached.chapter
+        cached?.chapter?.body
+    } else {
+        StructuredChapterCache.read(cacheKey, targetUrl, Long.MAX_VALUE)?.body
+    }
     AppLogger.i("GetChapterDetail", "Fetching ESJ chapter: ${chapter.name} at $targetUrl")
     var parsedHtml: String? = null
     var parsedDetail: DetailedChapter? = null
@@ -85,8 +90,8 @@ fun EsjzoneClient.getChapterDetail(
         }
     }
     var fetchedFromNetwork = false
-    val responseBody = try {
-        getPage(
+    val pageResult = try {
+        getPageWithSource(
             authorization,
             targetUrl,
             PageCacheTtl.CHAPTER,
@@ -109,9 +114,14 @@ fun EsjzoneClient.getChapterDetail(
         throw error
     }
 
+    val responseBody = pageResult.body
     val parsed = validatedDetail(responseBody)
     val detail = parsed.copy(body = parsed.body?.inheritLegacyPositions(previousBody))
-    val reference = StructuredChapterCache.write(cacheKey, responseBody, detail)
+    val reference = if (pageResult.fetchedAt != null && pageResult.sourceReference != null) {
+        StructuredChapterCache.write(cacheKey, pageResult.fetchedAt, pageResult.sourceReference, detail)
+    } else {
+        StructuredChapterCache.write(cacheKey, responseBody, detail)
+    }
     return detail.copy(sourceCacheReference = reference, servedFromNetwork = fetchedFromNetwork)
 }
 

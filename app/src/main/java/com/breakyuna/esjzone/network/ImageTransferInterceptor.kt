@@ -15,15 +15,14 @@ internal class ImageTransferInterceptor(private val availableBytes: () -> Long) 
         val body = response.body ?: return response
         try {
             if (body.contentLength() > MAX_IMAGE_BYTES) throw IOException("Image exceeds transfer limit")
-            checkSpace()
             val source = object : ForwardingSource(body.source()) {
                 private var received = 0L
-                private var nextSpaceCheck = 0L
+                private var nextSpaceCheck = SPACE_CHECK_INTERVAL
                 override fun read(sink: Buffer, byteCount: Long): Long {
                     try {
                         if (received >= nextSpaceCheck) {
                             checkSpace()
-                            nextSpaceCheck = received + 1024 * 1024
+                            nextSpaceCheck = received + SPACE_CHECK_INTERVAL
                         }
                         val count = super.read(sink, minOf(byteCount, MAX_IMAGE_BYTES - received + 1))
                         if (count > 0) received += count
@@ -53,5 +52,6 @@ internal class ImageTransferInterceptor(private val availableBytes: () -> Long) 
     companion object {
         const val MAX_IMAGE_BYTES = 32L * 1024 * 1024
         const val MIN_FREE_BYTES = 64L * 1024 * 1024
+        private const val SPACE_CHECK_INTERVAL = 1024L * 1024L
     }
 }

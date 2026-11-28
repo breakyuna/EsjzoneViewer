@@ -228,6 +228,7 @@ class HomeTabModel internal constructor(
                         HomeDataCache.updateMemorySnapshot(authorization, partialData, cacheEpoch)
                     }
                     ensureActive()
+                    popularSnapshotWriteJob?.cancel()
                     mutableState.value = State.Result(data, isSyncing = false)
                     withContext(Dispatchers.IO) {
                         ensureActive()
@@ -265,6 +266,7 @@ class HomeTabModel internal constructor(
                 }
                 val current = mutableState.value as? State.Result ?: return@launch
                 val updated = current.homeData.copy(weeklyUpdates = days, weeklyFailure = null)
+                popularSnapshotWriteJob?.cancel()
                 mutableState.value = current.copy(isSyncing = false, homeData = updated)
                 withContext(Dispatchers.IO) {
                     HomeDataCache.updateMemorySnapshot(authorization, updated, cacheEpoch)
@@ -280,31 +282,51 @@ class HomeTabModel internal constructor(
     }
 
     private val enrichedPopular = mutableSetOf<String>()
+    private var popularSnapshotWriteJob: Job? = null
     suspend fun loadVisiblePopular(items: List<com.breakyuna.esjzone.novellibrary.data.WeeklyPopularNovel>) {
-        for (item in items) {
-            if (item.url in enrichedPopular) continue
-            val cacheEpoch = PageCache.currentEpoch
-            val enriched = try {
-                com.breakyuna.esjzone.network.cancellablePageRequest(background = true) {
-                    PresentationAccess.client.enrichWeeklyPopular(authorization,
-                        com.breakyuna.esjzone.network.features.WeeklyPopularSeed(rank = item.rank, name = item.name, url = item.url, weeklyViews = item.weeklyViews))
+        val cacheEpoch = PageCache.currentEpoch
+        var pendingSnapshot: Pair<HomeData, Long>? = null
+        try {
+            for (item in items) {
+                if (item.url in enrichedPopular) continue
+                val enriched = try {
+                    com.breakyuna.esjzone.network.cancellablePageRequest(background = true) {
+                        PresentationAccess.client.enrichWeeklyPopular(authorization,
+                            com.breakyuna.esjzone.network.features.WeeklyPopularSeed(rank = item.rank, name = item.name, url = item.url, weeklyViews = item.weeklyViews))
+                    }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { continue }
+                kotlin.coroutines.coroutineContext.ensureActive()
+                enrichedPopular += item.url
+                val current = mutableState.value as? State.Result ?: continue
+                val updated = current.homeData.copy(weeklyPopular = current.homeData.weeklyPopular.map {
+                    if (it.url == item.url) com.breakyuna.esjzone.network.features.mergeWeeklyPopularEnrichment(it, enriched) else it
+                })
+                mutableState.value = current.copy(homeData = updated)
+                val version = HomeDataCache.updateMemorySnapshot(authorization, updated, cacheEpoch)
+                if (version != null) {
+                    pendingSnapshot = updated to version
                 }
-            } catch (e: CancellationException) { throw e }
-            catch (_: Exception) { continue }
-            kotlin.coroutines.coroutineContext.ensureActive()
-            enrichedPopular += item.url
-            val current = mutableState.value as? State.Result ?: continue
-            val updated = current.homeData.copy(weeklyPopular = current.homeData.weeklyPopular.map {
-                if (it.url == item.url) com.breakyuna.esjzone.network.features.mergeWeeklyPopularEnrichment(it, enriched) else it
-            })
-            mutableState.value = current.copy(homeData = updated)
-            HomeDataCache.updateMemorySnapshot(authorization, updated, cacheEpoch)
-            withContext(Dispatchers.IO) { HomeDataCache.writeSnapshot(authorization, updated, cacheEpoch) }
+            }
+        } finally {
+            val pending = pendingSnapshot
+            if (pending != null) {
+                popularSnapshotWriteJob?.cancel()
+                popularSnapshotWriteJob = viewModelScope.launch(Dispatchers.IO) {
+                    HomeDataCache.writeSnapshot(
+                        authorization,
+                        pending.first,
+                        cacheEpoch,
+                        expectedVersion = pending.second
+                    )
+                }
+            }
         }
     }
 
     fun reload() {
         weeklyJob?.cancel()
+        popularSnapshotWriteJob?.cancel()
         enrichedPopular.clear()
         unloadRandomRecommendations(clearDeduplication = true)
         getHomeData(forceRefresh = true)

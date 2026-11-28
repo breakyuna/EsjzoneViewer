@@ -3,7 +3,6 @@ package com.breakyuna.esjzone.ui.page
 import androidx.compose.animation.EnterExitState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -28,20 +27,21 @@ internal fun rememberPageTransitionSettled(): State<Boolean> {
     }
 }
 
-/** Keep the first layout stable until both page motion and cover motion settle.
- * Loading continues in the model; only presentation of its latest result is deferred.
+/** Keep the first layout stable until both page motion and cover motion settle,
+ * while rendering cached/downloaded results immediately once available.
  */
 @Composable
 internal fun rememberNovelDetailPresentationState(
     source: StateFlow<NovelPageModel.State>
 ): State<NovelPageModel.State> {
     val settledState = rememberPageTransitionSettled()
-    val current = source.collectAsStateWithLifecycle()
-    val initial = remember(source) { current.value }
+    val initial = remember(source) { source.value }
     return produceState(initial, source, settledState) {
         combine(source, snapshotFlow { settledState.value }) { latest, settled -> latest to settled }
             .collect { (latest, settled) ->
-                if (settled) value = latest
+                if (settled || (value !is NovelPageModel.State.Result && latest is NovelPageModel.State.Result)) {
+                    value = latest
+                }
             }
     }
 }

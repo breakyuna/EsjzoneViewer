@@ -13,8 +13,6 @@ import kotlin.math.roundToInt
 /** Generates bounded shelf artwork on IO; full-size viewers keep using the remote cover URL. */
 internal fun writeBookshelfThumbnail(source: File, target: File, beforeCommit: () -> Unit = {}) {
     val directory = requireNotNull(target.parentFile)
-    val webp = File.createTempFile("shelf-cover-", ".webp.tmp", directory)
-    val jpeg = File.createTempFile("shelf-cover-", ".jpg.tmp", directory)
     val pending = File.createTempFile("shelf-cover-", ".img.tmp", directory)
     var bitmap: Bitmap? = null
     try {
@@ -26,18 +24,18 @@ internal fun writeBookshelfThumbnail(source: File, target: File, beforeCommit: (
         }
         bitmap = (drawable as? BitmapDrawable)?.bitmap
         val staticBitmap = bitmap
-        val candidates = mutableListOf(source)
-        // Keep animated covers intact instead of silently turning them into a still image.
-        if (staticBitmap != null) {
+        val encoded = if (staticBitmap != null) {
             @Suppress("DEPRECATION")
             val format = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
-            webp.outputStream().use { if (staticBitmap.compress(format, 82, it)) candidates += webp }
-            if (!staticBitmap.hasAlpha()) {
-                jpeg.outputStream().use { if (staticBitmap.compress(Bitmap.CompressFormat.JPEG, 85, it)) candidates += jpeg }
-            }
+            pending.outputStream().use { staticBitmap.compress(format, 82, it) } && pending.length() > 0L
+        } else {
+            false
         }
-        val smallest = requireNotNull(candidates.filter { it.length() > 0L }.minByOrNull(File::length))
-        smallest.copyTo(pending, overwrite = true)
+        // Keep animated covers intact instead of silently turning them into a still image.
+        if (!encoded) {
+            source.copyTo(pending, overwrite = true)
+        }
+        require(pending.length() > 0L) { "Empty bookshelf thumbnail" }
         beforeCommit()
         try {
             Files.move(pending.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
@@ -46,8 +44,6 @@ internal fun writeBookshelfThumbnail(source: File, target: File, beforeCommit: (
         }
     } finally {
         bitmap?.recycle()
-        webp.delete()
-        jpeg.delete()
         pending.delete()
     }
 }

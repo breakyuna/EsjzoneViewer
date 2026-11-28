@@ -52,6 +52,8 @@ internal object PageCacheInvalidation {
 internal object PageCache {
 
     private const val FILE_PREFIX = "esj-page-v3"
+    private const val VALIDATED_HEADER_TAG = "v4"
+    private val REFERENCE_HASH_REGEX = Regex("[a-f0-9]{64}")
     private val mutableLimitMiB = MutableStateFlow(SettingsDefaults.DEFAULT_PAGE_CACHE_MIB)
     val limitMiB = mutableLimitMiB.asStateFlow()
     private val maxCacheBytes: Long get() = mutableLimitMiB.value.toLong() * 1024L * 1024L
@@ -66,12 +68,17 @@ internal object PageCache {
     // Tokens stay live only while a requester or an in-flight operation owns them.
     private val requests = WeakHashMap<WriteToken, String>()
     private val versions = mutableMapOf<String, Long>()
-    private val bodyFingerprints = mutableMapOf<String, String>()
     private var nextRequest = 0L
     private var nextVersion = 0L
 
     internal data class WriteToken(val epoch: Long, val request: Long)
-    internal data class Entry(val fetchedAt: Long, val body: String, val reference: String)
+    internal data class Entry(
+        val fetchedAt: Long,
+        val body: String,
+        val reference: String,
+        val validated: Boolean = false
+    )
+    internal data class ReadResult(val entry: Entry, val isFresh: Boolean)
 
     fun beginWrite(key: String): WriteToken = synchronized(ioLock) {
         val id = digest(key)
@@ -99,7 +106,6 @@ internal object PageCache {
         epoch += 1L
         requests.clear()
         versions.clear()
-        bodyFingerprints.clear()
     }
 
     @Volatile
@@ -161,9 +167,13 @@ internal object PageCache {
     private data class ReadHandle(val reader: java.io.BufferedReader, val file: File,
         val id: String, val version: Long, val reference: String)
 
-    fun readEntry(key: String, maxAgeMillis: Long = Long.MAX_VALUE,
-                  nowMillis: Long = System.currentTimeMillis(), sourceKey: String = key): Entry? {
-        if (maxAgeMillis <= 0L) return null
+    internal fun readWithFreshness(
+        key: String,
+        maxAgeMillis: Long,
+        nowMillis: Long = System.currentTimeMillis(),
+        sourceKey: String = key,
+        touchIfStale: Boolean = false
+    ): ReadResult? {
         try {
             val opened = synchronized(ioLock) {
                 val file = fileFor(key) ?: return null
@@ -175,19 +185,24 @@ internal object PageCache {
                     "$sourceId:${digest(structuredKey(sourceKey))}:$epoch:${versions[sourceId] ?: version}")
             }
             val entry = opened.reader.use { reader ->
-                val fetchedAt = reader.readLine()?.toLongOrNull() ?: return null
-                if (fetchedAt > nowMillis || nowMillis - fetchedAt > maxAgeMillis) return null
-                Entry(fetchedAt, reader.readText(), opened.reference)
+                val header = reader.readLine() ?: return null
+                val separator = header.indexOf('|')
+                val fetchedAt = (if (separator >= 0) header.substring(0, separator) else header)
+                    .toLongOrNull() ?: return null
+                val validated = separator >= 0 && header.substring(separator + 1) == VALIDATED_HEADER_TAG
+                if (fetchedAt > nowMillis) return null
+                Entry(fetchedAt, reader.readText(), opened.reference, validated)
             }
-            val fingerprint = digest(entry.body)
+            val isFresh = maxAgeMillis > 0L && nowMillis - entry.fetchedAt <= maxAgeMillis
             return synchronized(ioLock) {
                 if (versions[opened.id] != opened.version || !matchesReference(opened.reference.split(':'))) null
                 else {
-                    bodyFingerprints[opened.id] = fingerprint
-                    if (nowMillis - opened.file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS) {
+                    if ((isFresh || touchIfStale) &&
+                        nowMillis - opened.file.lastModified() >= ACCESS_TOUCH_INTERVAL_MILLIS
+                    ) {
                         opened.file.setLastModified(nowMillis)
                     }
-                    entry
+                    ReadResult(entry, isFresh)
                 }
             }
         } catch (_: Exception) {
@@ -196,13 +211,14 @@ internal object PageCache {
         }
     }
 
-    internal fun referenceForBody(key: String, body: String): String? {
-        val fingerprint = digest(body)
-        return synchronized(ioLock) {
-            val id = digest(key)
-            if (bodyFingerprints[id] != fingerprint) null else reference(key)
-        }
+    fun readEntry(key: String, maxAgeMillis: Long = Long.MAX_VALUE,
+                  nowMillis: Long = System.currentTimeMillis(), sourceKey: String = key): Entry? {
+        if (maxAgeMillis <= 0L) return null
+        return readWithFreshness(key, maxAgeMillis, nowMillis, sourceKey)?.takeIf { it.isFresh }?.entry
     }
+
+    internal fun referenceForBody(key: String, body: String): String? =
+        readEntry(key)?.takeIf { it.body == body }?.reference
 
     fun readStale(key: String): String? = read(key, Long.MAX_VALUE)
 
@@ -235,7 +251,7 @@ internal object PageCache {
     }
 
     private fun matchesReference(parts: List<String>): Boolean =
-        parts.size == 4 && parts.take(2).all { it.matches(Regex("[a-f0-9]{64}")) } &&
+        parts.size == 4 && parts.take(2).all { REFERENCE_HASH_REGEX.matches(it) } &&
             parts[2].toLongOrNull() == epoch &&
             parts[3].toLongOrNull()?.let { it == (versions[parts[0]] ?: versions[parts[1]]) } == true
 
@@ -247,7 +263,7 @@ internal object PageCache {
 
     internal fun prepareWrite(key: String, nowMillis: Long = System.currentTimeMillis(),
         expected: WriteToken? = null, trim: Boolean = true, sourceReference: String? = null,
-        fingerprint: String? = null, writeBody: (Writer) -> Unit): PreparedWrite? {
+        fingerprint: String? = null, validated: Boolean = false, writeBody: (Writer) -> Unit): PreparedWrite? {
         val file: File
         val token: WriteToken
         synchronized(ioLock) {
@@ -260,6 +276,10 @@ internal object PageCache {
         try {
             temporary.writeCompressedText { writer ->
                 writer.write(nowMillis.toString())
+                if (validated) {
+                    writer.write("|")
+                    writer.write(VALIDATED_HEADER_TAG)
+                }
                 writer.write("\n")
                 writeBody(writer)
             }
@@ -287,7 +307,6 @@ internal object PageCache {
                     if (!existed) cachedEntryCount += 1
                     val id = digest(key)
                     versions[id] = ++nextVersion
-                    if (fingerprint == null) bodyFingerprints.remove(id) else bodyFingerprints[id] = fingerprint
                     CacheDiagnostics.record(CacheEventType.UPDATE, diagnosticLayer(key),
                         if (existed) CacheEventReason.REPLACED else CacheEventReason.STORED, fileId = id, bytes = file.length())
                     if (!key.startsWith("chapter-structured-v2|")) remove(structuredKey(key), CacheEventReason.SOURCE_UPDATED)
@@ -303,10 +322,26 @@ internal object PageCache {
     }
 
     fun write(key: String, body: String, nowMillis: Long = System.currentTimeMillis(),
-              expected: WriteToken? = null, trim: Boolean = true): Boolean {
-        val prepared = prepareWrite(key, nowMillis, expected, trim, fingerprint = digest(body)) { it.write(body) }
+              expected: WriteToken? = null, trim: Boolean = true, validated: Boolean = false): Boolean {
+        val prepared = prepareWrite(key, nowMillis, expected, trim, validated = validated) { it.write(body) }
             ?: return false
         return prepared.use { it.commit() }
+    }
+
+    internal fun writeAndReference(
+        key: String,
+        body: String,
+        nowMillis: Long = System.currentTimeMillis(),
+        expected: WriteToken? = null,
+        trim: Boolean = true,
+        validated: Boolean = false
+    ): Pair<Long, String>? {
+        val prepared = prepareWrite(key, nowMillis, expected, trim, validated = validated) { it.write(body) } ?: return null
+        return prepared.use {
+            synchronized(ioLock) {
+                if (!it.commit()) null else reference(key)?.let { ref -> nowMillis to ref }
+            }
+        }
     }
 
     internal fun write(key: String, nowMillis: Long = System.currentTimeMillis(),
@@ -327,7 +362,6 @@ internal object PageCache {
     private fun removeId(id: String, reason: CacheEventReason, layer: CacheLayer = CacheLayer.PAGE) {
         requests.values.remove(id)
         versions.remove(id)
-        bodyFingerprints.remove(id)
         val file = directory?.let { File(it, "$FILE_PREFIX-$id.html") } ?: return
         val length = file.length()
         if (runCatching { file.delete() }.getOrDefault(false)) {
@@ -341,12 +375,22 @@ internal object PageCache {
 
     internal fun structuredKey(key: String): String = "chapter-structured-v2|$key"
 
-    internal fun writeDerived(key: String, sourceBody: String, json: String): String? {
-        val source = readEntry(key)?.takeIf { it.body == sourceBody } ?: return null
-        val prepared = prepareWrite(structuredKey(key), source.fetchedAt, sourceReference = source.reference) {
+    internal fun writeDerived(
+        key: String,
+        fetchedAt: Long,
+        sourceReference: String,
+        json: String
+    ): String? {
+        if (!isCurrentReference(sourceReference)) return null
+        val prepared = prepareWrite(structuredKey(key), fetchedAt, sourceReference = sourceReference) {
             it.write(json)
         } ?: return null
-        return prepared.use { if (it.commit()) source.reference else null }
+        return prepared.use { if (it.commit()) sourceReference else null }
+    }
+
+    internal fun writeDerived(key: String, sourceBody: String, json: String): String? {
+        val source = readEntry(key)?.takeIf { it.body == sourceBody } ?: return null
+        return writeDerived(key, source.fetchedAt, source.reference, json)
     }
 
     fun remove(key: String, reason: CacheEventReason = CacheEventReason.INVALIDATED) = synchronized(ioLock) {
@@ -449,7 +493,6 @@ internal object PageCache {
                 val id = file.name.removePrefix("$FILE_PREFIX-").removeSuffix(".html")
                 requests.values.remove(id)
                 versions.remove(id)
-        bodyFingerprints.remove(id)
                 total -= length
                 count -= 1
                 CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.PAGE, CacheEventReason.CAPACITY,

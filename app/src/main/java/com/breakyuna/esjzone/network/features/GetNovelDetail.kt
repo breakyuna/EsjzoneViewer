@@ -53,7 +53,7 @@ fun EsjzoneClient.getNovelDetail(
 
     if (!includeComments) CacheAnalysis.lookup(CacheLayer.DETAIL, fresh = false, forced = forceRefresh)
     AppLogger.i("GetNovelDetail", "Fetching novel detail: ${novel.name} at $targetUrl")
-    val responseBody = getPage(
+    val pageResult = getPageWithSource(
         authorization = authorization,
         url = targetUrl,
         maxAgeMillis = PageCacheTtl.DETAIL,
@@ -62,11 +62,9 @@ fun EsjzoneClient.getNovelDetail(
         awaitFresh = awaitFresh,
         allowStaleOnError = !awaitFresh && !forceRefresh
     )
-    val sourceReference = if (!includeComments) {
-        PageCache.referenceForBody(detailCacheKey, responseBody)
-    } else null
+    val sourceReference = if (!includeComments) pageResult.sourceReference else null
 
-    val detailedNovel = parseNovelDetail(novel, responseBody, targetUrl, includeComments)
+    val detailedNovel = parseNovelDetail(novel, pageResult.body, targetUrl, includeComments)
     if (sourceReference != null) {
         NovelDetailCache.write(detailCacheKey, detailedNovel, sourceReference, detailCacheEpoch)
     }
@@ -78,8 +76,17 @@ internal fun EsjzoneClient.getCachedNovelDetail(authorization: Authorization, no
     val targetUrl = EsjzoneUrls.novelDetailUrl(novel.url) ?: return null
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
     NovelDetailCache.read(cacheKey)?.let { return it }
-    val html = PageCache.readStale(cacheKey) ?: return null
-    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.DETAIL).trusted) return null
+    val entry = PageCache.readEntry(cacheKey) ?: return null
+    val html = entry.body
+    val valid = if (entry.validated) {
+        html.isNotBlank() && html.contains("<html", ignoreCase = true)
+    } else {
+        PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.DETAIL).trusted
+    }
+    if (!valid) {
+        PageCache.remove(cacheKey, CacheEventReason.INVALID_DATA)
+        return null
+    }
     return parseNovelDetail(novel, html, targetUrl, false)
 }
 
@@ -213,8 +220,17 @@ internal fun EsjzoneClient.getCachedNovelChapterList(
     val targetUrl = EsjzoneUrls.resolve(novelUrl).substringBefore('#')
     val cacheKey = novelDetailCacheKey(authorization, targetUrl)
     NovelDetailCache.read(cacheKey)?.let { return it.chapterList }
-    val html = PageCache.readStale(cacheKey) ?: return null
-    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.DETAIL).trusted) return null
+    val entry = PageCache.readEntry(cacheKey) ?: return null
+    val html = entry.body
+    val valid = if (entry.validated) {
+        html.isNotBlank() && html.contains("<html", ignoreCase = true)
+    } else {
+        PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.DETAIL).trusted
+    }
+    if (!valid) {
+        PageCache.remove(cacheKey, CacheEventReason.INVALID_DATA)
+        return null
+    }
     val document = Jsoup.parse(html, targetUrl)
     val list = detailSelector.select(document, "#integration").firstOrNull()?.let(::analyseChapterList)
         ?: return null

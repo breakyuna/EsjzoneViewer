@@ -81,6 +81,7 @@ internal fun parseNovelCard(
     layout: NovelCardLayout,
     selector: HtmlSelector = JsoupHtmlSelector
 ): CoveredNovel {
+    val isList = layout == NovelCardLayout.LIST
     val titleLink = selector.first(card, NovelCardSelectors.TITLE_LINK)
     val imageLink = selector.first(card, ".card-img-tiles[href], a[href*='/detail/']")
     // A list card can split its statistics across several `.card-other`
@@ -90,11 +91,10 @@ internal fun parseNovelCard(
     val latestLink = selector.first(card, NovelCardSelectors.LATEST_LINK)
     val latestText = latestLink?.text()
         ?: selector.first(card, NovelCardSelectors.LATEST_EPISODE)?.text()
-    val authorLink = selector.first(card, NovelCardSelectors.AUTHOR_LINK)
+    val authorLink = if (isList) selector.first(card, NovelCardSelectors.AUTHOR_LINK) else null
 
     val views = statCount(stats, StatKind.VIEWS, selector)
     val likes = statCount(stats, StatKind.LIKES, selector)
-    val isList = layout == NovelCardLayout.LIST
 
     return parseNovelCard(
         card = card,
@@ -108,11 +108,11 @@ internal fun parseNovelCard(
         r18 = r18,
         latestTitle = latestText,
         latestUrl = latestLink?.attr("href"),
-        author = authorLink?.text().takeIf { isList },
-        authorUrl = authorLink?.attr("href").takeIf { isList },
-        words = statCount(stats, StatKind.WORDS, selector).takeIf { isList },
-        articleCount = statCount(stats, StatKind.ARTICLES, selector).takeIf { isList },
-        discussionCount = statCount(stats, StatKind.DISCUSSIONS, selector).takeIf { isList },
+        author = authorLink?.text(),
+        authorUrl = authorLink?.attr("href"),
+        words = if (isList) statCount(stats, StatKind.WORDS, selector) else null,
+        articleCount = if (isList) statCount(stats, StatKind.ARTICLES, selector) else null,
+        discussionCount = if (isList) statCount(stats, StatKind.DISCUSSIONS, selector) else null,
         selector = selector
     )
 }
@@ -121,23 +121,23 @@ private enum class StatKind(
     val selectors: String
 ) {
     VIEWS(
-        ".icon-eye, [class*='icon-eye'], [class*='feather-eye'], " +
+        "[class*='icon-eye'], [class*='feather-eye'], " +
             "[data-feather='eye'], [data-icon='eye']"
     ),
     LIKES(
-        ".icon-heart, [class*='icon-heart'], [class*='feather-heart'], " +
+        "[class*='icon-heart'], [class*='feather-heart'], " +
             "[data-feather='heart'], [data-icon='heart']"
     ),
     WORDS(
-        ".icon-file-text, [class*='icon-file-text'], [class*='feather-file-text'], " +
+        "[class*='icon-file-text'], [class*='feather-file-text'], " +
             "[data-feather='file-text'], [data-icon='file-text']"
     ),
     ARTICLES(
-        ".icon-feather, [class*='icon-feather'], [class*='feather-feather'], " +
+        "[class*='icon-feather'], [class*='feather-feather'], " +
             "[data-feather='feather'], [data-icon='feather']"
     ),
     DISCUSSIONS(
-        ".icon-message-square, [class*='icon-message-square'], [class*='feather-message-square'], " +
+        "[class*='icon-message-square'], [class*='feather-message-square'], " +
             "[data-feather='message-square'], [data-icon='message-square']"
     )
 }

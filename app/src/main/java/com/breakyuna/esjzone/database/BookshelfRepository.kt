@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LoadFailureKind
+import com.breakyuna.esjzone.network.UntrustedPageException
 import com.breakyuna.esjzone.network.loadFailureKind
 import com.breakyuna.esjzone.network.features.getAllFavorites
 import com.breakyuna.esjzone.network.features.getNovelDetail
@@ -71,16 +72,35 @@ object BookshelfRepository {
     private val metadataScheduleLock = Any()
     private val supplementingScopes = mutableSetOf<String>()
     private val pendingSupplementAuthorizations = mutableMapOf<String, Authorization>()
-    private val metadataAttempts = ConcurrentHashMap<String, Long>()
+    private val metadataAttempts = ConcurrentHashMap<String, MetadataAttempt>()
     private val metadataSemaphore = Semaphore(6)
     private val mutableCoverStates = MutableStateFlow<Map<Pair<String, String>, CoverState>>(emptyMap())
     val coverStates = mutableCoverStates.asStateFlow()
+    private val DETAIL_ID_REGEX = Regex("^/detail/([^/]+?)(?:\\.html)?/?$")
+    private const val MAX_COVER_STATES = 256
+    private const val MAX_METADATA_BACKOFF_SHIFT = 4
+
+    private data class MetadataAttempt(
+        val lastAttemptAt: Long,
+        val failures: Int = 0,
+        val completed: Boolean = false
+    )
 
     // Transient display states must stay bounded across books and account scopes.
     private fun setCoverState(key: Pair<String, String>, state: CoverState) {
         mutableCoverStates.update { states ->
-            ((states - key) + (key to state)).entries.toList().takeLast(256)
-                .associate { it.key to it.value }
+            LinkedHashMap<Pair<String, String>, CoverState>(minOf(states.size + 1, MAX_COVER_STATES) + 1).apply {
+                for ((existingKey, existingValue) in states) {
+                    if (existingKey != key) put(existingKey, existingValue)
+                }
+                while (size >= MAX_COVER_STATES) {
+                    val iterator = keys.iterator()
+                    if (!iterator.hasNext()) break
+                    iterator.next()
+                    iterator.remove()
+                }
+                put(key, state)
+            }
         }
     }
 
@@ -146,7 +166,7 @@ object BookshelfRepository {
 
     /** Extracts ESJ's stable detail id from a canonical /detail/{id}.html URL. */
     fun novelIdFor(url: String): String =
-        Regex("^/detail/([^/]+?)(?:\\.html)?/?$")
+        DETAIL_ID_REGEX
             .find(EsjzoneUrls.canonicalPageKey(url))
             ?.groupValues
             ?.getOrNull(1)
@@ -246,6 +266,9 @@ object BookshelfRepository {
                 )
             }
             dao.upsert(next)
+            if (desired) {
+                metadataAttempts.remove("$scope:$key")
+            }
         }
         scheduleSync(authorization)
     }
@@ -425,10 +448,27 @@ object BookshelfRepository {
                     .filter { it.visible && it.url.isNotBlank() && (it.coverUrl.isBlank() || it.author.isBlank() || validNovelTitle(it.title, it.novelId, it.url).isBlank()) }
                     .filter { row ->
                         val attemptKey = "$scope:${row.bookKey}"
-                        val previous = metadataAttempts.putIfAbsent(attemptKey, now)
-                        previous == null ||
-                            (now - previous >= METADATA_RETRY_INTERVAL_MILLIS &&
-                                metadataAttempts.replace(attemptKey, previous, now))
+                        var reserved = false
+                        metadataAttempts.compute(attemptKey) { _, previous ->
+                            when {
+                                previous == null -> {
+                                    reserved = true
+                                    MetadataAttempt(lastAttemptAt = now)
+                                }
+                                previous.completed -> previous
+                                else -> {
+                                    val shift = (previous.failures - 1).coerceIn(0, MAX_METADATA_BACKOFF_SHIFT)
+                                    val interval = METADATA_RETRY_INTERVAL_MILLIS shl shift
+                                    if (now < previous.lastAttemptAt || now - previous.lastAttemptAt >= interval) {
+                                        reserved = true
+                                        previous.copy(lastAttemptAt = now)
+                                    } else {
+                                        previous
+                                    }
+                                }
+                            }
+                        }
+                        reserved
                     }
                     .toList()
 
@@ -447,6 +487,7 @@ object BookshelfRepository {
                         batch.forEach { row ->
                             launch {
                                 metadataSemaphore.withPermit {
+                                    val attemptKey = "$scope:${row.bookKey}"
                                     val coverKey = row.scope to row.bookKey
                                     val needsCover = EsjzoneUrls.coverOrEmpty(row.coverUrl).isBlank()
                                     if (needsCover) setCoverState(coverKey, CoverState.Resolving)
@@ -466,15 +507,32 @@ object BookshelfRepository {
                                             coverUrl = EsjzoneUrls.coverOrEmpty(detail.coverUrl),
                                             isAdult = detail.isAdult
                                         )
+                                        metadataAttempts[attemptKey] = MetadataAttempt(
+                                            lastAttemptAt = System.currentTimeMillis(),
+                                            failures = 0,
+                                            completed = true
+                                        )
                                         if (needsCover) {
                                             if (EsjzoneUrls.coverOrEmpty(detail.coverUrl).isBlank()) {
                                                 setCoverState(coverKey, CoverState.Missing)
                                             } else mutableCoverStates.update { it - coverKey }
                                         }
                                     } catch (error: CancellationException) {
+                                        metadataAttempts.remove(attemptKey)
                                         if (needsCover) mutableCoverStates.update { it - coverKey }
                                         throw error
                                     } catch (error: Exception) {
+                                        val permanent = error is UntrustedPageException &&
+                                            (error.validation.reason == "HTTP 404" || error.validation.reason == "HTTP 410")
+                                        metadataAttempts.compute(attemptKey) { _, previous ->
+                                            val failures = ((previous?.failures ?: 0) + 1)
+                                                .coerceAtMost(MAX_METADATA_BACKOFF_SHIFT + 1)
+                                            MetadataAttempt(
+                                                lastAttemptAt = System.currentTimeMillis(),
+                                                failures = failures,
+                                                completed = permanent || (previous?.completed == true)
+                                            )
+                                        }
                                         if (needsCover) setCoverState(coverKey, CoverState.Failed(error.coverFailure()))
                                         AppLogger.w(
                                             "BookshelfRepository",
@@ -541,14 +599,8 @@ object BookshelfRepository {
             val remoteHas = remoteByKey.containsKey(local.bookKey)
             if (local.syncState == BookshelfSyncState.PENDING_ADD) {
                 if (remoteHas) {
-                    val current = dao.find(scope, local.bookKey)
-                    if (current != null && BookshelfSyncRules.shouldApplyResponse(
-                            current.operationVersion, local.operationVersion
-                        )
-                    ) {
-                        dao.updateStateIfVersion(scope, local.bookKey, local.operationVersion,
-                            BookshelfSyncState.SYNCED, visible = true)
-                    }
+                    dao.updateStateIfVersion(scope, local.bookKey, local.operationVersion,
+                        BookshelfSyncState.SYNCED, visible = true)
                 } else {
                     if (remoteCallCount > 0) delay(150)
                     val current = dao.find(scope, local.bookKey)
@@ -558,14 +610,8 @@ object BookshelfRepository {
                     }
                     remoteCallCount++
                     if (EsjzoneClient.toggleFavorite(authorization, local)) {
-                        val current = dao.find(scope, local.bookKey)
-                        if (current != null && BookshelfSyncRules.shouldApplyResponse(
-                                current.operationVersion, local.operationVersion
-                            )
-                        ) {
-                            dao.updateStateIfVersion(scope, local.bookKey, local.operationVersion,
-                                BookshelfSyncState.SYNCED, visible = true)
-                        }
+                        dao.updateStateIfVersion(scope, local.bookKey, local.operationVersion,
+                            BookshelfSyncState.SYNCED, visible = true)
                     } else {
                         operationFailed = true
                         if (local.retryCount + 1 >= MAX_SYNC_RETRIES) {
@@ -576,13 +622,7 @@ object BookshelfRepository {
             } else {
                 processedRemovalKeys += local.bookKey
                 if (!remoteHas) {
-                    val current = dao.find(scope, local.bookKey)
-                    if (current != null && BookshelfSyncRules.shouldApplyResponse(
-                            current.operationVersion, local.operationVersion
-                        )
-                    ) {
-                        dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
-                    }
+                    dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
                 } else {
                     if (remoteCallCount > 0) delay(150)
                     val current = dao.find(scope, local.bookKey)
@@ -592,13 +632,7 @@ object BookshelfRepository {
                     }
                     remoteCallCount++
                     if (EsjzoneClient.toggleFavorite(authorization, local)) {
-                        val current = dao.find(scope, local.bookKey)
-                        if (current != null && BookshelfSyncRules.shouldApplyResponse(
-                                current.operationVersion, local.operationVersion
-                            )
-                        ) {
-                            dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
-                        }
+                        dao.deleteIfVersion(scope, local.bookKey, local.operationVersion)
                     } else {
                         operationFailed = true
                         if (local.retryCount + 1 >= MAX_SYNC_RETRIES) {
@@ -623,35 +657,34 @@ object BookshelfRepository {
                     .map { it.bookKey }
             )
         }
-        remoteByKey.values.forEach { remoteNovel ->
-            val key = keyFor(remoteNovel.url)
-            if (BookshelfSyncRules.shouldImport(key, localKeys, tombstoneKeys)) {
-                val existing = dao.findAnyWithCover(key)
-                val resolvedCover = existing?.coverUrl?.takeIf { it.isNotBlank() }?.let { rawCover ->
-                    runCatching { EsjzoneUrls.resolve(rawCover) }.getOrDefault(rawCover)
-                }.orEmpty()
-                val inserted = dao.insertIfAbsent(
-                    BookshelfEntry(
-                        scope = scope,
-                        bookKey = key,
-                        novelId = novelIdFor(remoteNovel.url),
-                        url = EsjzoneUrls.resolve(remoteNovel.url).substringBefore('#'),
-                        title = validNovelTitle(remoteNovel.name, novelIdFor(remoteNovel.url), remoteNovel.url),
-                        author = existing?.author.orEmpty(),
-                        coverUrl = resolvedCover,
-                        isAdult = existing?.isAdult ?: false,
-                        syncState = BookshelfSyncState.SYNCED
+        // Persist imported rows and latest chapter status in one transaction.
+        requireDatabase().withTransaction {
+            remoteByKey.values.forEach { remoteNovel ->
+                val key = keyFor(remoteNovel.url)
+                if (BookshelfSyncRules.shouldImport(key, localKeys, tombstoneKeys)) {
+                    val existing = dao.findAnyWithCover(key)
+                    val resolvedCover = existing?.coverUrl?.takeIf { it.isNotBlank() }?.let { rawCover ->
+                        runCatching { EsjzoneUrls.resolve(rawCover) }.getOrDefault(rawCover)
+                    }.orEmpty()
+                    val inserted = dao.insertIfAbsent(
+                        BookshelfEntry(
+                            scope = scope,
+                            bookKey = key,
+                            novelId = novelIdFor(remoteNovel.url),
+                            url = EsjzoneUrls.resolve(remoteNovel.url).substringBefore('#'),
+                            title = validNovelTitle(remoteNovel.name, novelIdFor(remoteNovel.url), remoteNovel.url),
+                            author = existing?.author.orEmpty(),
+                            coverUrl = resolvedCover,
+                            isAdult = existing?.isAdult ?: false,
+                            syncState = BookshelfSyncState.SYNCED
+                        )
                     )
-                )
-                if (inserted != -1L) {
-                    localKeys += key
-                    added += 1
+                    if (inserted != -1L) {
+                        localKeys += key
+                        added += 1
+                    }
                 }
             }
-        }
-        // The favorite page itself exposes the latest chapter and update time;
-        // persist that snapshot without touching local favorite/remove intent.
-        requireDatabase().withTransaction {
             remoteByKey.values.forEach { remoteNovel ->
                 val key = keyFor(remoteNovel.url)
                 val current = dao.find(scope, key) ?: return@forEach

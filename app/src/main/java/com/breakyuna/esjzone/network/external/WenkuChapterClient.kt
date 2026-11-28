@@ -10,8 +10,6 @@ import com.breakyuna.esjzone.network.CacheEventType
 import com.breakyuna.esjzone.network.CacheLayer
 import com.breakyuna.esjzone.network.CacheEventReason
 import com.breakyuna.esjzone.network.PageCacheTtl
-import com.breakyuna.esjzone.network.PageKind
-import com.breakyuna.esjzone.network.PageResponsePolicy
 import com.breakyuna.esjzone.network.NetworkHttpException
 import com.breakyuna.esjzone.network.pageRequestCancellation
 import com.breakyuna.esjzone.network.readBytesBounded
@@ -59,11 +57,18 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         if (resolveChapterSource(url) != ChapterSource.WENKU8) throw UnsupportedExternalChapterException()
         val key = wenkuChapterCacheKey(url)
         if (!forceRefresh) StructuredChapterCache.read(key, url)?.let { return it }
-        if (!forceRefresh) PageCache.read(key, PageCacheTtl.CHAPTER)?.let { cached ->
-            runCatching { validateAndParse(cached, chapter, url) }.getOrNull()?.let {
+        if (!forceRefresh) PageCache.readEntry(key, PageCacheTtl.CHAPTER)?.let { cachedEntry ->
+            runCatching { validateAndParse(cachedEntry.body, chapter, url) }.getOrNull()?.let {
                 CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.FRESH, key)
                 CacheAnalysis.lookup(CacheLayer.PAGE, fresh = true)
-                return it.copy(sourceCacheReference = StructuredChapterCache.write(key, cached, it))
+                return it.copy(
+                    sourceCacheReference = StructuredChapterCache.write(
+                        key,
+                        cachedEntry.fetchedAt,
+                        cachedEntry.reference,
+                        it
+                    )
+                )
             }
             PageCache.remove(key, CacheEventReason.INVALID_DATA)
         }
@@ -110,12 +115,15 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     private fun cacheChapter(url: String, detail: DetailedChapter, token: PageCache.WriteToken): DetailedChapter {
         val document = ExternalChapterHtml.cacheDocument(detail, url)
         val key = wenkuChapterCacheKey(url)
-        if (!PageCache.write(key, document, expected = token)) return detail
-        return detail.copy(sourceCacheReference = StructuredChapterCache.write(key, document, detail))
+        val (fetchedAt, reference) = PageCache.writeAndReference(key, document, expected = token) ?: return detail
+        return detail.copy(sourceCacheReference = StructuredChapterCache.write(key, fetchedAt, reference, detail))
     }
 
     private fun validateAndParse(html: String, chapter: Chapter, url: String): DetailedChapter {
-        if (!PageResponsePolicy.validate(200, html, url, kind = PageKind.EXTERNAL_CHAPTER).trusted) {
+        if (html.isBlank() ||
+            resolveChapterSource(url) != ChapterSource.WENKU8 ||
+            CloudflareChallenge.hasChallengeDocumentMarkers(html)
+        ) {
             throw ExternalChapterParseException()
         }
         return ExternalChapterHtml.parse(html, chapter, url)

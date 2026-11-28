@@ -25,12 +25,31 @@ internal object StructuredChapterCache {
     }
     private data class Snapshot(val name: String, val sourceUrl: String, val body: ChapterBody,
         val html: String?, val previous: Chapter?, val next: Chapter?)
+    internal data class ReadResult(val chapter: DetailedChapter, val isFresh: Boolean)
 
     fun read(key: String, url: String, maxAgeMillis: Long = PageCacheTtl.CHAPTER): DetailedChapter? {
-        val entry = PageCache.readEntry(PageCache.structuredKey(key), maxAgeMillis, sourceKey = key) ?: run {
+        if (maxAgeMillis <= 0L) {
             CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = false)
             return null
         }
+        return readWithFreshness(key, url, maxAgeMillis)?.takeIf { it.isFresh }?.chapter
+    }
+
+    internal fun readWithFreshness(
+        key: String,
+        url: String,
+        maxAgeMillis: Long = PageCacheTtl.CHAPTER
+    ): ReadResult? {
+        val result = PageCache.readWithFreshness(
+            PageCache.structuredKey(key),
+            maxAgeMillis,
+            sourceKey = key,
+            touchIfStale = true
+        ) ?: run {
+            CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = false)
+            return null
+        }
+        val entry = result.entry
         val encoded = entry.body
         return runCatching {
             val stored = requireNotNull(gson.fromJson(encoded, Snapshot::class.java))
@@ -51,19 +70,31 @@ internal object StructuredChapterCache {
             if (cached == null && formatKey != null) {
                 synchronized(recoveredFormatting) { recoveredFormatting[formatKey] = FormattingResult(body.formatting) }
             }
-            DetailedChapter(stored.name, body.components(), stored.previous, stored.next,
+            val chapter = DetailedChapter(stored.name, body.components(), stored.previous, stored.next,
                 stored.html, stored.sourceUrl, body, sourceCacheReference = entry.reference)
-                .also {
-                    val fresh = System.currentTimeMillis() - entry.fetchedAt <= PageCacheTtl.CHAPTER
-                    CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = fresh)
-                    val reason = if (fresh) CacheEventReason.FRESH else CacheEventReason.STALE
-                    CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.CHAPTER, reason, PageCache.structuredKey(key))
-                }
+            if (!result.isFresh) {
+                CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = false)
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.CHAPTER, CacheEventReason.STALE, PageCache.structuredKey(key))
+            } else {
+                val freshForTtl = System.currentTimeMillis() - entry.fetchedAt <= PageCacheTtl.CHAPTER
+                CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = freshForTtl)
+                val reason = if (freshForTtl) CacheEventReason.FRESH else CacheEventReason.STALE
+                CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.CHAPTER, reason, PageCache.structuredKey(key))
+            }
+            ReadResult(chapter, result.isFresh)
         }.getOrElse {
             CacheAnalysis.lookup(CacheLayer.CHAPTER, fresh = false)
             PageCache.remove(PageCache.structuredKey(key), CacheEventReason.INVALID_DATA)
             null
         }
+    }
+
+    fun write(key: String, fetchedAt: Long, sourceReference: String, detail: DetailedChapter): String? {
+        val ready = detail.withStructuredBody()
+        if (ready.content.isEmpty()) return null
+        val json = gson.toJson(Snapshot(ready.name, ready.sourceUrl.orEmpty(), requireNotNull(ready.body),
+            ready.contentHtml, ready.previous, ready.next))
+        return PageCache.writeDerived(key, fetchedAt, sourceReference, json)
     }
 
     fun write(key: String, sourceHtml: String, detail: DetailedChapter): String? {

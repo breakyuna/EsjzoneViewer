@@ -96,7 +96,10 @@ object LogsPage : AppDestination {
         var query by remember { mutableStateOf("") }
         var clearDialog by remember { mutableStateOf(false) }
         var crashDialog by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { AppLogger.refreshCrashReport() }
+        LaunchedEffect(Unit) {
+            AppLogger.refreshLogs()
+            AppLogger.refreshCrashReport()
+        }
 
         val visible = remember(logs, filter, query) {
             logs.asReversed().filter { entry ->

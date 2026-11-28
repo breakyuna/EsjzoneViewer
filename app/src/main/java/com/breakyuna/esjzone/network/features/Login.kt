@@ -4,6 +4,8 @@ import com.breakyuna.esjzone.network.readTextBounded
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.NetworkHttpException
+import com.breakyuna.esjzone.network.NetworkRequestException
 import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.network.pageRequestCancellation
 import com.breakyuna.esjzone.util.AppLogger
@@ -13,9 +15,7 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
-import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
 import java.io.IOException
 
 internal sealed interface LoginAttemptResult {
@@ -47,17 +47,12 @@ internal fun EsjzoneClient.loginWithOutcome(
         val baseUrl = EsjzoneUrls.baseForDomain(domain)
         var loginResponseUrl: HttpUrl? = null
         val cookieJar = LoginCookieJar()
-        val httpClient = OkHttpClient.Builder()
-            .cookieJar(cookieJar)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .callTimeout(20, TimeUnit.SECONDS)
-            .build()
+        val httpClient = loginClient(cookieJar)
 
+        val tokenUrl = EsjzoneUrls.resolve("/my/login", baseUrl)
         val tokenCall = httpClient.newCall(
             Request.Builder()
-                .url(EsjzoneUrls.resolve("/my/login", baseUrl))
+                .url(tokenUrl)
                 .post(
                     FormBody.Builder()
                         .add("plxf", "getAuthToken")
@@ -69,11 +64,16 @@ internal fun EsjzoneClient.loginWithOutcome(
         val cancellation = pageRequestCancellation.get()
         cancellation?.attach(tokenCall)
         val authorizationToken = try { tokenCall.execute().use { response ->
-            if (!response.isSuccessful || response.request.url.host != domain) {
-                null
-            } else {
-                parseAuthorizationToken(response.body?.readTextBounded().orEmpty())
+            if (!response.isSuccessful) {
+                throw NetworkHttpException(tokenUrl, response.code)
             }
+            if (!response.request.url.host.equals(domain, ignoreCase = true)) {
+                throw NetworkRequestException(
+                    tokenUrl,
+                    IOException("Unexpected login token redirect host: ${response.request.url.host}")
+                )
+            }
+            parseAuthorizationToken(response.body?.readTextBounded().orEmpty())
         } } finally { cancellation?.detachCall() }
 
         if (authorizationToken.isNullOrBlank()) {
@@ -81,9 +81,10 @@ internal fun EsjzoneClient.loginWithOutcome(
             return LoginAttemptResult.InvalidResponse
         }
 
+        val loginUrl = EsjzoneUrls.resolve("/inc/mem_login.php", baseUrl)
         val loginCall = httpClient.newCall(
             Request.Builder()
-                .url(EsjzoneUrls.resolve("/inc/mem_login.php", baseUrl))
+                .url(loginUrl)
                 .post(
                     FormBody.Builder()
                         .add("email", email)
@@ -98,11 +99,16 @@ internal fun EsjzoneClient.loginWithOutcome(
         cancellation?.attach(loginCall)
         val status = try { loginCall.execute().use { response ->
             loginResponseUrl = response.request.url
-            if (!response.isSuccessful || response.request.url.host != domain) {
-                null
-            } else {
-                parseLoginStatus(response.body?.readTextBounded().orEmpty())
+            if (!response.isSuccessful) {
+                throw NetworkHttpException(loginUrl, response.code)
             }
+            if (!response.request.url.host.equals(domain, ignoreCase = true)) {
+                throw NetworkRequestException(
+                    loginUrl,
+                    IOException("Unexpected login redirect host: ${response.request.url.host}")
+                )
+            }
+            parseLoginStatus(response.body?.readTextBounded().orEmpty())
         } } finally { cancellation?.detachCall() }
 
         if (cancellation?.isCancelled() == true) throw CancellationException("Login cancelled")

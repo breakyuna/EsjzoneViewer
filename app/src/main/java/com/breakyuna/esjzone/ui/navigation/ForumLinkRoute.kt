@@ -27,12 +27,22 @@ private val forumBoardPath = Regex("/forum/[0-9]+/[0-9]+")
 private val forumPostPath = Regex("/forum/([0-9]+)/[0-9]+\\.html")
 private val novelListPath = Regex("/list-([0-3])([1-8])")
 
+private val ignorableTrackingParams = setOf(
+    "fbclid", "gclid", "spm", "from", "share", "ref", "ref_src", "ref_url", "si", "feature"
+)
+
+private fun isIgnorableTrackingParam(name: String): Boolean {
+    val lower = name.lowercase()
+    return lower.startsWith("utm_") || lower in ignorableTrackingParams
+}
+
 private fun nativeSitePath(url: HttpUrl): String? {
-    val siteHost = url.host.removePrefix("www.")
-    if (SettingsDefaults.DOMAINS.none { it.removePrefix("www.") == siteHost }) return null
+    val siteHost = url.host.lowercase().removePrefix("www.")
+    if (SettingsDefaults.DOMAINS.none { it.removePrefix("www.").equals(siteHost, ignoreCase = true) }) return null
     val defaultPort = if (url.isHttps) 443 else 80
     if (url.port != defaultPort || url.username.isNotEmpty() || url.password.isNotEmpty()) return null
-    if (url.query != null || url.fragment != null) return null
+    if (url.fragment != null) return null
+    if (url.query != null && !url.queryParameterNames.all(::isIgnorableTrackingParam)) return null
 
     return url.encodedPath.trimEnd('/')
 }
@@ -44,7 +54,8 @@ internal fun forumLinkRoute(url: HttpUrl): LegacyRoute? {
         "" -> return LegacyRoute.Static(HomeTab.key)
         "/forum" -> return LegacyRoute.Static(ForumPage.key)
         "/guestbook" -> return LegacyRoute.Static(GuestbookPage.key)
-        "/my/profile", "/my/profile.html" -> return LegacyRoute.Static(ProfileTab.key)
+        "/my/profile", "/my/profile.html" ->
+            return if (url.queryParameter("uid") != null) null else LegacyRoute.Static(ProfileTab.key)
         "/my/sys" -> return LegacyRoute.Static(SystemMessagesPage.key)
         "/my/reply" -> return LegacyRoute.Static(MemberRepliesPage.key)
         "/my/record" -> return LegacyRoute.Static(ExperienceRecordsPage.key)

@@ -32,6 +32,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import java.io.Serializable
+import java.util.IdentityHashMap
 
 
 private val BLOCK_TAG_NAMES = setOf(
@@ -47,17 +48,54 @@ internal val IMAGE_URL_ATTRIBUTES = listOf(
     "data-src", "data-original", "data-lazy-src", "data-actualsrc", "data-url", "data-origin", "data-file", "src"
 )
 
-private fun Node.isBlockElement(): Boolean =
-    this is Element && normalName() in BLOCK_TAG_NAMES
-
-private fun Node.containsBlockElement(): Boolean = when {
-    isBlockElement() -> true
-    this is Element -> normalName() !in IGNORED_TAG_NAMES && childNodes().any { it.containsBlockElement() }
-    else -> false
+private fun Element.hasBlockDescendants(): Boolean {
+    val stack = ArrayDeque<Element>()
+    for (child in childNodes()) {
+        if (child is Element && child.normalName() !in IGNORED_TAG_NAMES) {
+            if (child.normalName() in BLOCK_TAG_NAMES) return true
+            stack.addLast(child)
+        }
+    }
+    while (stack.isNotEmpty()) {
+        val current = stack.removeLast()
+        for (child in current.childNodes()) {
+            if (child is Element && child.normalName() !in IGNORED_TAG_NAMES) {
+                if (child.normalName() in BLOCK_TAG_NAMES) return true
+                stack.addLast(child)
+            }
+        }
+    }
+    return false
 }
 
-private fun Element.hasBlockDescendants(): Boolean =
-    childNodes().any { it.containsBlockElement() }
+private fun computeBlockDescendants(root: Element): IdentityHashMap<Element, Boolean> {
+    val hasBlockDescendant = IdentityHashMap<Element, Boolean>()
+    if (root.normalName() in IGNORED_TAG_NAMES) return hasBlockDescendant
+    val stack = ArrayDeque<Element>()
+    val postOrder = ArrayList<Element>()
+    stack.addLast(root)
+    while (stack.isNotEmpty()) {
+        val current = stack.removeLast()
+        postOrder.add(current)
+        for (child in current.childNodes()) {
+            if (child is Element && child.normalName() !in IGNORED_TAG_NAMES) {
+                stack.addLast(child)
+            }
+        }
+    }
+    for (i in postOrder.size - 1 downTo 0) {
+        val element = postOrder[i]
+        for (child in element.childNodes()) {
+            if (child is Element && child.normalName() !in IGNORED_TAG_NAMES) {
+                if (child.normalName() in BLOCK_TAG_NAMES || hasBlockDescendant.containsKey(child)) {
+                    hasBlockDescendant[element] = true
+                    break
+                }
+            }
+        }
+    }
+    return hasBlockDescendant
+}
 
 private fun Element.isSignificantParagraph(): Boolean =
     text().isNotBlank() || selectFirst("img, br") != null
@@ -67,9 +105,12 @@ internal fun extractParagraphElements(
     container: Element,
     onAnonymousParagraph: (Element, Element) -> Unit = { _, _ -> }
 ): List<Element> = buildList {
+    if (container.normalName() in IGNORED_TAG_NAMES) return@buildList
+    val blockDescendants = computeBlockDescendants(container)
+
     fun collect(element: Element) {
         if (element.normalName() in IGNORED_TAG_NAMES) return
-        if (!element.hasBlockDescendants()) {
+        if (!blockDescendants.containsKey(element)) {
             add(element)
             return
         }
@@ -85,7 +126,7 @@ internal fun extractParagraphElements(
 
         for (child in element.childNodes()) {
             if (child is Element && child.normalName() in IGNORED_TAG_NAMES) continue
-            if (child is Element && child.containsBlockElement()) {
+            if (child is Element && (child.normalName() in BLOCK_TAG_NAMES || blockDescendants.containsKey(child))) {
                 flushAnon()
                 collect(child)
             } else {
@@ -113,7 +154,7 @@ fun analyseComponents(element: Element): List<Component> {
     val components = mutableListOf<Component>()
 
     for (paragraph in extractParagraphElements(element)) {
-        components.addAll(analyseParagraph(paragraph))
+        components.addAll(analyseParagraphContent(paragraph))
     }
 
     return components.toList()
@@ -125,13 +166,19 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
     if (paragraph.hasBlockDescendants()) {
         return analyseComponents(paragraph)
     }
+    return analyseParagraphContent(paragraph)
+}
 
-    if (paragraph.tagName() == "img") {
+private fun analyseParagraphContent(paragraph: Element): List<Component> {
+    if (paragraph.normalName() in IGNORED_TAG_NAMES) return emptyList()
+
+    if (paragraph.normalName() == "img") {
         val imageUrl = resolveImageUrl(paragraph)
         return if (imageUrl.isNotBlank()) listOf(ImageComponent(imageUrl)) else emptyList()
     }
 
-    if (paragraph.selectFirst("img") == null) {
+    val images = paragraph.getElementsByTag("img")
+    if (images.isEmpty()) {
         val components = mutableListOf<TextComponent>()
         for (child in paragraph.childNodes()) {
             if (child is TextNode) {
@@ -141,6 +188,15 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
             }
         }
         return components.toSingle()
+    }
+
+    val imgAncestors = IdentityHashMap<Element, Boolean>()
+    for (img in images) {
+        var current = img.parent()
+        while (current != null && current !== paragraph) {
+            if (imgAncestors.put(current, true) != null) break
+            current = current.parent()
+        }
     }
 
     val results = mutableListOf<Component>()
@@ -160,7 +216,7 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
             currentTexts.add(component)
         } else if (node is Element) {
             if (node.normalName() in IGNORED_TAG_NAMES) return
-            if (node.tagName() == "img") {
+            if (node.normalName() == "img") {
                 val imageUrl = resolveImageUrl(node)
                 if (imageUrl.isNotBlank()) {
                     flushTexts()
@@ -169,7 +225,7 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
                 return
             }
 
-            if (node.selectFirst("img") == null) {
+            if (!imgAncestors.containsKey(node)) {
                 currentTexts.addAll(analyseText(node, styles))
                 return
             }
@@ -219,6 +275,8 @@ private val STYLE_HEX_BACKGROUND_COLOR_REGEX =
 private val STYLE_HEX_COLOR_REGEX =
     "(?<!background-)color:#([0-9a-f]{3}|[0-9a-f]{6})(?![0-9a-f])".toRegex(RegexOption.IGNORE_CASE)
 private val STYLE_FONT_SIZE_REGEX = "font-size:([0-9]+)px".toRegex(RegexOption.IGNORE_CASE)
+private val STANDALONE_RGB_COLOR_REGEX =
+    "rgba?\\(([0-9]+),([0-9]+),([0-9]+)(?:,[0-9.]+)?\\)".toRegex(RegexOption.IGNORE_CASE)
 
 private fun extractInlineStyles(node: Element, baseStyles: List<TextStyle>): List<TextStyle> {
     val newStyles = mutableListOf<TextStyle>()
@@ -340,8 +398,7 @@ private fun analyseStyles(styleString: String): List<TextStyle> {
 private fun parseStandaloneColor(raw: String): Color? {
     val trimmed = raw.trim().replace(" ", "")
     if (trimmed.startsWith("#")) return parseHexColor(trimmed.removePrefix("#"))
-    val match = "rgba?\\(([0-9]+),([0-9]+),([0-9]+)(?:,[0-9.]+)?\\)".toRegex(RegexOption.IGNORE_CASE)
-        .matchEntire(trimmed)
+    val match = STANDALONE_RGB_COLOR_REGEX.matchEntire(trimmed)
     return match?.let(::parseRgbColor)
 }
 

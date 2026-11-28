@@ -72,8 +72,9 @@ internal object ListPageCache {
         parse: (String, Int) -> ParsedListPage<T>
     ): Pair<Session<T>, List<T>> {
         val key = "list-snapshot-v1|${EsjzoneClient.pageCacheKey(authorization, firstUrl)}"
-        fun parsePage(html: String, page: Int): ParsedListPage<T> {
-            if (!PageResponsePolicy.validate(200, html, pageUrl(page), kind = kind).trusted) {
+        fun parsePage(html: String, page: Int, validatePolicy: Boolean = true): ParsedListPage<T> {
+            if (html.isBlank()) throw IOException("Invalid cached list page")
+            if (validatePolicy && !PageResponsePolicy.validate(200, html, pageUrl(page), kind = kind).trusted) {
                 throw IOException("Invalid cached list page")
             }
             return parse(html, page)
@@ -90,11 +91,12 @@ internal object ListPageCache {
             stored to PageCache.currentToken(key)
         }
         fun session(batch: Batch, token: PageCache.WriteToken, failure: LoadFailureKind? = null): Session<T> =
-            Session(publish(batch), token, authorization, pageUrl, maxAgeMillis, kind, ::parsePage, failure)
+            Session(publish(batch), token, authorization, pageUrl, maxAgeMillis, kind,
+                parse = { html, page, validatePolicy -> parsePage(html, page, validatePolicy) }, failure)
         if (!forceRefresh && !complete && old != null &&
             System.currentTimeMillis() - requireNotNull(old.snapshot.pages[1]).fetchedAt <= maxAgeMillis) {
             val parsed = try {
-                parsePage(requireNotNull(old.snapshot.pages[1]).html, 1)
+                parsePage(requireNotNull(old.snapshot.pages[1]).html, 1, validatePolicy = old.snapshot.legacyPages)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: StaleListBatchException) {
@@ -160,7 +162,7 @@ internal object ListPageCache {
             throw error
         } catch (error: Exception) {
             if (!allowFallback || old == null || error is StaleListBatchException) throw error
-            val parsed = parsePage(requireNotNull(old.snapshot.pages[1]).html, 1)
+            val parsed = parsePage(requireNotNull(old.snapshot.pages[1]).html, 1, validatePolicy = old.snapshot.legacyPages)
             val opened = synchronized(lock) {
                 if (!PageCache.commitIfCurrent(key, token) {
                         if (!PageCache.isCurrentReference(old.reference)) throw StaleListBatchException()
@@ -197,7 +199,7 @@ internal object ListPageCache {
         private val batch: Batch,
         private val token: PageCache.WriteToken, private val authorization: Authorization,
         private val pageUrl: (Int) -> String, private val maxAgeMillis: Long,
-        private val kind: PageKind, private val parse: (String, Int) -> ParsedListPage<T>,
+        private val kind: PageKind, private val parse: (String, Int, Boolean) -> ParsedListPage<T>,
         val fallbackFailure: LoadFailureKind?
     ) {
         private val key: String get() = batch.key
@@ -228,7 +230,7 @@ internal object ListPageCache {
             }
             val cachedParsed = if (cached != null && System.currentTimeMillis() - cached.fetchedAt <= maxAgeMillis) {
                 try {
-                    parse(cached.html, page)
+                    parse(cached.html, page, batch.snapshot.legacyPages)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: StaleListBatchException) {
@@ -270,7 +272,7 @@ internal object ListPageCache {
             val html = EsjzoneClient.getPage(authorization, pageUrl(page), maxAgeMillis,
                 forceRefresh = true, pageKind = kind, allowStaleOnError = false,
                 coalesceRequests = false, cacheResponse = false)
-            val parsed = parse(html, page)
+            val parsed = parse(html, page, true)
             synchronized(lock) {
                 if (!isCurrent()) throw StaleListBatchException()
                 val latest = batch.snapshot
