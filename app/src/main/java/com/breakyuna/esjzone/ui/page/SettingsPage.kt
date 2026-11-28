@@ -156,7 +156,6 @@ import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.ui.navigation.AppDestination
 import com.breakyuna.esjzone.ui.navigation.rememberAppViewModel
-import com.breakyuna.esjzone.ui.screen.LoginScreen
 import com.breakyuna.esjzone.ui.screen.MainScreen
 import com.breakyuna.esjzone.util.LocaleHelper
 import com.breakyuna.esjzone.util.AppLogger
@@ -179,6 +178,7 @@ object SettingsPage : AppDestination {
         val scope = rememberCoroutineScope()
         val model = rememberAppViewModel { SettingsPageModel() }
         val state by model.state.collectAsStateWithLifecycle()
+        val logoutInProgress by SettingsPageModel.logoutInProgress.collectAsStateWithLifecycle()
         val scanModel: StorageLocationModel = androidx.lifecycle.viewmodel.compose.viewModel(key = "download-scan") {
             StorageLocationModel()
         }
@@ -231,7 +231,6 @@ object SettingsPage : AppDestination {
             if (section == "STORAGE" || section == "DOWNLOAD") model.refreshCacheStats()
             onPauseOrDispose { }
         }
-        LaunchedEffect(state.logoutCompleted) { if (state.logoutCompleted) rootNavigator.replaceAll(LoginScreen) }
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHost) },
@@ -387,7 +386,7 @@ object SettingsPage : AppDestination {
                             stringResource(R.string.settings_logout_title),
                             subtitle = null,
                             centered = true
-                        ) { if (!state.logoutInProgress) showLogout = true }
+                        ) { if (!logoutInProgress) showLogout = true }
                     }
                 }
                 if (displayedSection == "NAVIGATION") {
@@ -626,17 +625,6 @@ object SettingsPage : AppDestination {
             }
         }
 
-        if (state.logoutFailed) AlertDialog(
-            onDismissRequest = { model.clearLogoutFailure() },
-            title = { Text(stringResource(R.string.settings_logout_failed_title)) },
-            text = { Text(stringResource(R.string.settings_logout_failed_message)) },
-            confirmButton = {
-                TextButton(onClick = { model.clearLogoutFailure() }) {
-                    Text(stringResource(R.string.logout_confirm))
-                }
-            }
-        )
-
         if (siteUnavailable) AlertDialog(
             onDismissRequest = { siteUnavailable = false },
             title = { Text(stringResource(R.string.settings_mirror_unavailable_title)) },
@@ -649,11 +637,11 @@ object SettingsPage : AppDestination {
         )
 
         if (showLogout) AlertDialog(
-            onDismissRequest = { if (!state.logoutInProgress) showLogout = false },
+            onDismissRequest = { if (!logoutInProgress) showLogout = false },
             title = { Text(stringResource(R.string.logout_confirm_message)) },
             text = { Text(stringResource(R.string.logout_consequence)) },
-            confirmButton = { TextButton(onClick = { model.logout(authorization); showLogout = false }, enabled = !state.logoutInProgress) { if (state.logoutInProgress) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.logout_confirm)) } },
-            dismissButton = { TextButton(onClick = { showLogout = false }, enabled = !state.logoutInProgress) { Text(stringResource(R.string.logout_cancel)) } }
+            confirmButton = { TextButton(onClick = { model.logout(authorization); showLogout = false }, enabled = !logoutInProgress) { if (logoutInProgress) CircularProgressIndicator(Modifier.size(20.dp)) else Text(stringResource(R.string.logout_confirm)) } },
+            dismissButton = { TextButton(onClick = { showLogout = false }, enabled = !logoutInProgress) { Text(stringResource(R.string.logout_cancel)) } }
         )
     }
 }

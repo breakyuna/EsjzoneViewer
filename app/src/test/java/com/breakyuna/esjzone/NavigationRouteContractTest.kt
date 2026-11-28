@@ -5,10 +5,16 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.scene.Scene
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.ui.navigation.AppNavKey
 import com.breakyuna.esjzone.ui.navigation.LegacyRoute
 import com.breakyuna.esjzone.ui.navigation.ReaderRoute
 import com.breakyuna.esjzone.ui.navigation.containerTransformMetadata
+import com.breakyuna.esjzone.ui.navigation.restoreRootSession
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,6 +36,41 @@ class NavigationRouteContractTest {
             org.junit.Assert.assertNull(authorization)
             assertEquals(listOf(AppNavKey.Login), stack)
         }
+    }
+
+    @Test
+    fun fullSessionClearAdvancesRootLogoutRevisionUnlikeSingleHostOrStaleEpochClear() {
+        val before = EsjzoneClient.logoutRevision.value
+        EsjzoneClient.clearSession("www.esjzone.cc")
+        assertEquals(before, EsjzoneClient.logoutRevision.value)
+
+        assertFalse(EsjzoneClient.clearSessionForLogout(expectedEpoch = -1L))
+        assertEquals(before, EsjzoneClient.logoutRevision.value)
+
+        assertTrue(EsjzoneClient.clearSessionForLogout(expectedEpoch = EsjzoneClient.sessionEpoch()))
+        assertEquals(before + 1L, EsjzoneClient.logoutRevision.value)
+    }
+
+    @Test
+    fun rootRestoreStartedBeforeLogoutCannotPublishAfterIt() = runBlocking {
+        val previousRevision = EsjzoneClient.logoutRevision.value
+        val restored = CompletableDeferred<Authorization?>()
+        val published = mutableListOf<Authorization?>()
+        val oldRestore = launch(start = CoroutineStart.UNDISPATCHED) {
+            restoreRootSession(previousRevision, readAuthorization = { restored.await() }) {
+                published.add(it)
+            }
+        }
+
+        EsjzoneClient.clearSession()
+        restored.complete(Authorization("fixture-key", "fixture-token", "www.esjzone.cc"))
+        oldRestore.join()
+        assertTrue(published.isEmpty())
+
+        restoreRootSession(EsjzoneClient.logoutRevision.value, readAuthorization = { null }) {
+            published.add(it)
+        }
+        assertEquals(listOf<Authorization?>(null), published)
     }
 
     @Test

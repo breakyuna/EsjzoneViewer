@@ -10,15 +10,18 @@ import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.features.requestRemoteLogout
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 enum class CacheOperation { PAGES, IMAGES }
 
@@ -34,11 +37,20 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         val storageUsage: List<StorageUsage>? = null,
         val storageStatsError: Boolean = false,
         val cacheClearError: Boolean = false,
-        val logoutInProgress: Boolean = false,
-        val logoutCompleted: Boolean = false,
-        val logoutFailed: Boolean = false,
         val autoBackupFailed: Boolean = false
     )
+
+    companion object {
+        private val logoutScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val activeLogoutInProgress = MutableStateFlow(false)
+        private val activeLogoutFailed = MutableStateFlow(false)
+        val logoutInProgress: StateFlow<Boolean> = activeLogoutInProgress.asStateFlow()
+        val logoutFailed: StateFlow<Boolean> = activeLogoutFailed.asStateFlow()
+
+        fun clearLogoutFailure() {
+            activeLogoutFailed.value = false
+        }
+    }
 
     fun setAutoBackup(enabled: Boolean, scope: String) {
         viewModelScope.launch {
@@ -176,51 +188,45 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
         }
     }
 
-    fun clearLogoutFailure() {
-        mutableState.update { it.copy(logoutFailed = false) }
-    }
-
     fun logout(authorization: Authorization) {
-        if (mutableState.value.logoutInProgress) return
-        mutableState.update { it.copy(
-            logoutInProgress = true, logoutCompleted = false, logoutFailed = false
-        ) }
-        viewModelScope.launch(Dispatchers.IO) {
+        if (!activeLogoutInProgress.compareAndSet(false, true)) return
+        activeLogoutFailed.value = false
+        val startedEpoch = PresentationAccess.client.sessionEpoch()
+        logoutScope.launch {
             var completed = false
             try {
                 // Once confirmed, finish remote logout and local cleanup even if the user leaves settings.
-                withContext(NonCancellable) {
-                    com.breakyuna.esjzone.network.features.HistoryDataCache.clearSnapshot(authorization)
-                    val sessions = PresentationAccess.settings.DOMAINS.mapNotNull { domain ->
-                        PresentationAccess.client.restoreAuthorization(domain)
-                            ?.takeIf { PresentationAccess.client.hasSiteSession(domain) }
-                    }
-                    coroutineScope {
-                        sessions.map { session ->
-                            launch { PresentationAccess.client.requestRemoteLogout(session) }
-                        }.joinAll()
-                    }
-                    PresentationAccess.client.clearSession()
-                    val dao = PresentationAccess.database.cacheDao()
-                    dao.deleteByKey("ews_key")
-                    dao.deleteByKey("ews_token")
-                    dao.deleteByKey("session_domain")
-                    dao.getAll()
-                        .filter { it.key.startsWith("profile:") }
-                        .forEach { dao.delete(it) }
-                    com.breakyuna.esjzone.network.features.HistoryDataCache.clearMemory()
-                    completed = true
+                com.breakyuna.esjzone.network.features.HistoryDataCache.clearSnapshot(authorization)
+                val sessions = PresentationAccess.settings.DOMAINS.mapNotNull { domain ->
+                    PresentationAccess.client.restoreAuthorization(domain)
+                        ?.takeIf { PresentationAccess.client.hasSiteSession(domain) }
                 }
+                coroutineScope {
+                    sessions.map { session ->
+                        launch { PresentationAccess.client.requestRemoteLogout(session, startedEpoch) }
+                    }.joinAll()
+                }
+                if (PresentationAccess.client.sessionEpoch() != startedEpoch) {
+                    completed = true
+                    return@launch
+                }
+                val dao = PresentationAccess.database.cacheDao()
+                dao.deleteByKey("ews_key")
+                dao.deleteByKey("ews_token")
+                dao.deleteByKey("session_domain")
+                dao.getAll()
+                    .filter { it.key.startsWith("profile:") }
+                    .forEach { dao.delete(it) }
+                com.breakyuna.esjzone.network.features.HistoryDataCache.clearMemory()
+                PresentationAccess.client.clearSessionForLogout(startedEpoch)
+                completed = true
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 AppLogger.e("SettingsPageModel", "Failed to clear local session", e)
             } finally {
-                mutableState.update { it.copy(
-                    logoutInProgress = false,
-                    logoutCompleted = completed,
-                    logoutFailed = !completed
-                ) }
+                activeLogoutInProgress.value = false
+                if (!completed) activeLogoutFailed.value = true
             }
         }
     }

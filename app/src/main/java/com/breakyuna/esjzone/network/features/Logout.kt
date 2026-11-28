@@ -8,11 +8,12 @@ import kotlinx.coroutines.CancellationException
 import okhttp3.Request
 
 /** Sends a bounded remote logout without clearing local sessions yet. */
-internal fun EsjzoneClient.requestRemoteLogout(authorization: Authorization) {
+internal fun EsjzoneClient.requestRemoteLogout(authorization: Authorization, expectedEpoch: Long) {
     // Use an isolated, non-persisting cookie jar. The request is deliberately
     // synchronous and bounded: returning before it finishes could let a late
     // server-side logout invalidate a session created by the next login.
-    val client = logoutClient(authorization)
+    if (sessionEpoch() != expectedEpoch) return
+    val client = logoutClient(authorization, expectedEpoch)
     try {
         client.newCall(
             Request.Builder()
@@ -32,11 +33,10 @@ internal fun EsjzoneClient.requestRemoteLogout(authorization: Authorization) {
 }
 
 fun EsjzoneClient.logout(authorization: Authorization) {
+    val startedEpoch = sessionEpoch()
     try {
-        requestRemoteLogout(authorization)
+        requestRemoteLogout(authorization, startedEpoch)
     } finally {
-        // This always runs after the bounded remote attempt, so no old request can
-        // clear a newly persisted session after logout() returns.
-        clearSession(authorization.domain)
+        clearSessionForLogout(startedEpoch, host = authorization.domain)
     }
 }

@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.Headers
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -804,6 +805,10 @@ object EsjzoneClient {
     val loginSessionChanges: StateFlow<Map<String, Long>>
         get() = persistentCookieJar?.loginSessionChanges ?: emptyLoginSessionChanges
 
+    private val mutableLogoutRevision = MutableStateFlow(0L)
+    /** Monotonic counter incremented when a full logout clears every persisted session. */
+    val logoutRevision: StateFlow<Long> = mutableLogoutRevision.asStateFlow()
+
     fun matchesActiveAccountEmail(email: String): Boolean? =
         persistentCookieJar?.matchesActiveAccountEmail(email)
 
@@ -887,20 +892,39 @@ object EsjzoneClient {
 
     /** Clears only the selected site's session; a null host clears every persisted session. */
     fun clearSession(host: String? = null) {
+        clearSessionInternal(host = host, expectedEpoch = null)
+    }
+
+    /** Clears the requested sessions only if no newer login changed the session epoch. */
+    internal fun clearSessionForLogout(expectedEpoch: Long, host: String? = null): Boolean =
+        clearSessionInternal(host = host, expectedEpoch = expectedEpoch)
+
+    private fun clearSessionInternal(host: String?, expectedEpoch: Long?): Boolean {
+        val jar = persistentCookieJar
+        if (jar != null) {
+            if (!jar.clearIfEpoch(expectedEpoch = expectedEpoch, host = host)) return false
+        } else if (expectedEpoch != null && expectedEpoch != 0L) {
+            return false
+        }
         // Prevent an old in-flight response from repopulating a cache namespace after
         // logout. The account-scoped files themselves remain safely inaccessible and can
         // still be reclaimed by the normal cache size policy.
         cacheEpoch.incrementAndGet()
         inFlightPages.clear()
         PageCache.cancelPendingWrites()
-        persistentCookieJar?.clear(host)
         synchronized(accountScopeLock) { accountScopeCache.clear() }
+        if (host.isNullOrBlank()) {
+            mutableLogoutRevision.update { it + 1L }
+        }
+        return true
     }
 
     /** Builds a client for remote logout that cannot persist response cookies. */
-    internal fun logoutClient(authorization: Authorization): OkHttpClient =
+    internal fun logoutClient(authorization: Authorization, expectedEpoch: Long): OkHttpClient =
         sharedHttpClient.newBuilder()
-            .cookieJar(AuthorizationCookieJar(authorization, persistResponses = false))
+            .cookieJar(AuthorizationCookieJar(
+                authorization, persistentCookieJar, persistResponses = false, expectedEpoch = expectedEpoch
+            ))
             .callTimeout(5, TimeUnit.SECONDS)
             .build()
 

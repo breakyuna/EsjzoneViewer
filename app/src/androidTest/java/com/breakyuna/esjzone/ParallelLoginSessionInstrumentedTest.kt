@@ -5,6 +5,7 @@ import android.content.ContextWrapper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.AuthorizationCookieJar
 import com.breakyuna.esjzone.network.PersistentCookieJar
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -63,6 +64,32 @@ class ParallelLoginSessionInstrumentedTest {
             assertEquals(mapOf(firstHost to 1L), jar.loginSessionChanges.value)
             assertNull(jar.activeAccountIdentity())
             assertTrue(jar.loadForRequest("https://$secondHost/".toHttpUrl()).isEmpty())
+        } finally {
+            jar.clear()
+        }
+    }
+
+    @Test
+    fun lateLogoutCookieJarCannotReadTheNewSession() {
+        val jar = isolatedJar()
+        jar.clear()
+        try {
+            val startEpoch = requireNotNull(commit(jar, firstHost, jar.sessionEpoch(), continuing = false))
+            val logoutUrl = "https://$firstHost/my/logout".toHttpUrl()
+            val original = requireNotNull(jar.authorizationFor(firstHost))
+            val originalLogout = AuthorizationCookieJar(
+                original, jar, persistResponses = false, expectedEpoch = startEpoch
+            )
+            assertEquals(2, originalLogout.loadForRequest(logoutUrl).size)
+
+            val newEpoch = requireNotNull(commit(jar, firstHost, startEpoch, continuing = false))
+            val current = requireNotNull(jar.authorizationFor(firstHost))
+            val delayedLogout = AuthorizationCookieJar(
+                current, jar, persistResponses = false, expectedEpoch = startEpoch
+            )
+            assertEquals(2, jar.loadForRequest(logoutUrl, newEpoch).size)
+            assertTrue(originalLogout.loadForRequest(logoutUrl).isEmpty())
+            assertTrue(delayedLogout.loadForRequest(logoutUrl).isEmpty())
         } finally {
             jar.clear()
         }

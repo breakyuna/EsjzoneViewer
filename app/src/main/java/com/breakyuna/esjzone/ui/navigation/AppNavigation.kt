@@ -22,7 +22,12 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.unit.IntOffset
 import com.breakyuna.esjzone.ui.designsystem.AppMotion
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
+import com.breakyuna.esjzone.R
+import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
+import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -59,6 +64,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.breakyuna.esjzone.BuildConfig
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.Authorization
+import com.breakyuna.esjzone.network.EsjzoneClient
 import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.hasCredentials
@@ -88,6 +94,7 @@ import com.breakyuna.esjzone.ui.page.NovelListPage
 import com.breakyuna.esjzone.ui.page.NovelPage
 import com.breakyuna.esjzone.ui.page.SearchPage
 import com.breakyuna.esjzone.ui.page.SettingsPage
+import com.breakyuna.esjzone.ui.page.SettingsPageModel
 import com.breakyuna.esjzone.ui.page.ReadingStatisticsPage
 import com.breakyuna.esjzone.ui.tab.CategoryBrowserPage
 import com.breakyuna.esjzone.ui.tab.HomeTab
@@ -682,6 +689,9 @@ fun AppNavigation() {
     val currentDomain by PresentationAccess.settings.domain
     val loginSessionChanges by PresentationAccess.client.loginSessionChanges.collectAsStateWithLifecycle()
     val loginSessionRevision = loginSessionChanges[currentDomain] ?: 0L
+    val logoutRevision = PresentationAccess.client.logoutRevision.collectAsStateWithLifecycle().value
+    val logoutFailed by SettingsPageModel.logoutFailed.collectAsStateWithLifecycle()
+    var handledLogoutRevision by remember { mutableLongStateOf(logoutRevision) }
     val authorizationState = remember {
         mutableStateOf<Authorization?>(null)
     }
@@ -689,26 +699,29 @@ fun AppNavigation() {
     var sessionRestored by remember { mutableStateOf(false) }
     var sessionGeneration by remember { mutableLongStateOf(0L) }
     var lastSessionSignature by remember { mutableStateOf<Triple<String, Long, Authorization?>?>(null) }
-    LaunchedEffect(currentDomain, loginSessionRevision) {
+    LaunchedEffect(currentDomain, loginSessionRevision, logoutRevision) {
         com.breakyuna.esjzone.util.AppLogger.i("Startup", "Restoring root session")
-        val restored = withContext(Dispatchers.IO) {
-            try {
-                PresentationAccess.client.restoreAuthorization(currentDomain)
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                com.breakyuna.esjzone.util.AppLogger.e("AppNavigation", "Unable to restore local session", error)
-                null
+        restoreRootSession(logoutRevision, readAuthorization = {
+            withContext(Dispatchers.IO) {
+                try {
+                    PresentationAccess.client.restoreAuthorization(currentDomain)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    com.breakyuna.esjzone.util.AppLogger.e("AppNavigation", "Unable to restore local session", error)
+                    null
+                }
             }
+        }) { restored ->
+            val nextSignature = Triple(currentDomain, loginSessionRevision, restored)
+            if (sessionRestored && lastSessionSignature != nextSignature) {
+                sessionGeneration += 1L
+            }
+            authorization = restored
+            lastSessionSignature = nextSignature
+            sessionRestored = true
+            com.breakyuna.esjzone.util.AppLogger.i("Startup", "Root session restored")
         }
-        val nextSignature = Triple(currentDomain, loginSessionRevision, restored)
-        if (sessionRestored && lastSessionSignature != nextSignature) {
-            sessionGeneration += 1L
-        }
-        authorization = restored
-        lastSessionSignature = nextSignature
-        sessionRestored = true
-        com.breakyuna.esjzone.util.AppLogger.i("Startup", "Root session restored")
     }
     // Decide auto-resume before allowing process-wide scans to acquire the reader's storage lock.
     var autoResumePending by remember {
@@ -773,6 +786,12 @@ fun AppNavigation() {
             },
             readerRoutes = readerRoutes
         )
+    }
+    LaunchedEffect(logoutRevision) {
+        if (logoutRevision != handledLogoutRevision) {
+            handledLogoutRevision = logoutRevision
+            navigator.replaceAll(LoginScreen)
+        }
     }
 
     val appContext = LocalContext.current.applicationContext
@@ -908,5 +927,27 @@ fun AppNavigation() {
             )
         }
         if (showAppUpdates) ReleaseUpdateDialog()
+        if (logoutFailed) AlertDialog(
+            onDismissRequest = SettingsPageModel::clearLogoutFailure,
+            title = { Text(stringResource(R.string.settings_logout_failed_title)) },
+            text = { Text(stringResource(R.string.settings_logout_failed_message)) },
+            confirmButton = {
+                TextButton(onClick = SettingsPageModel::clearLogoutFailure) {
+                    Text(stringResource(R.string.logout_confirm))
+                }
+            }
+        )
+    }
+}
+
+internal suspend fun restoreRootSession(
+    expectedLogoutRevision: Long,
+    readAuthorization: suspend () -> Authorization?,
+    onRestored: (Authorization?) -> Unit
+) {
+    val restored = readAuthorization()
+    // Check the live revision before publishing, even if Compose has yet to collect the logout.
+    if (EsjzoneClient.logoutRevision.value == expectedLogoutRevision) {
+        onRestored(restored)
     }
 }

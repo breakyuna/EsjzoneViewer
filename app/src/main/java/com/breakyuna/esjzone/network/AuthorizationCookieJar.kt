@@ -5,14 +5,21 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
-class AuthorizationCookieJar(
+class AuthorizationCookieJar internal constructor(
     private val authorization: Authorization,
-    private val persistResponses: Boolean = true,
-    private val deferResponses: Boolean = false
+    private val persistentJar: PersistentCookieJar?,
+    private val persistResponses: Boolean,
+    private val deferResponses: Boolean = false,
+    expectedEpoch: Long? = null
 ) : CookieJar {
 
-    private val persistentJar = EsjzoneClient.persistentCookieJar
-    private val sessionEpoch = persistentJar?.sessionEpoch()
+    constructor(
+        authorization: Authorization,
+        persistResponses: Boolean = true,
+        deferResponses: Boolean = false
+    ) : this(authorization, EsjzoneClient.persistentCookieJar, persistResponses, deferResponses)
+
+    private val sessionEpoch = expectedEpoch ?: persistentJar?.sessionEpoch()
     private val pendingResponses = mutableListOf<Pair<HttpUrl, List<Cookie>>>()
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {

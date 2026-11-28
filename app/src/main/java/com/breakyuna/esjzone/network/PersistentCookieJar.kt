@@ -439,54 +439,58 @@ internal class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     fun clear(host: String? = null) {
-        synchronized(lock) {
-            epoch++
-            scopeRevision++
-            if (host.isNullOrBlank()) {
-                cachedActiveSharedScope = null
-                activeSharedScopeLoaded = true
-                memoryIdentity = null
-                memoryEmailDigest = null
-                memoryActiveHosts.clear()
-                securePreferences?.let { secure ->
-                    val editor = secure.edit()
-                    secure.all.keys.filter { it.startsWith(ACTIVE_ACCOUNT_SCOPE_PREFIX) }
-                        .forEach(editor::remove)
-                    editor.remove(ACTIVE_SHARED_SCOPE)
-                    editor.remove(ACTIVE_EMAIL_DIGEST)
-                    editor.remove(LEGACY_PRIMARY_HOST)
-                    editor.remove(LEGACY_PRIMARY_IDENTITY)
-                    editor.commit()
-                }
-                cookies.clear()
-                val editor = preferences.edit()
-                preferences.all.keys
-                    .filter {
-                        it.startsWith(CACHE_SCOPE_PREFIX) ||
-                            it.startsWith(VERIFIED_AT_PREFIX)
-                    }
+        clearIfEpoch(expectedEpoch = null, host = host)
+    }
+
+    fun clearIfEpoch(expectedEpoch: Long?, host: String? = null): Boolean = synchronized(lock) {
+        if (expectedEpoch != null && expectedEpoch != epoch) return@synchronized false
+        epoch++
+        scopeRevision++
+        if (host.isNullOrBlank()) {
+            cachedActiveSharedScope = null
+            activeSharedScopeLoaded = true
+            memoryIdentity = null
+            memoryEmailDigest = null
+            memoryActiveHosts.clear()
+            securePreferences?.let { secure ->
+                val editor = secure.edit()
+                secure.all.keys.filter { it.startsWith(ACTIVE_ACCOUNT_SCOPE_PREFIX) }
                     .forEach(editor::remove)
-                editor.commit()
-            } else {
-                memoryActiveHosts.remove(normalizedHost(host))
-                securePreferences?.edit()?.remove(activeAccountScopeKey(host))?.commit()
-                val normalizedHost = host.trim().lowercase().removePrefix("www.")
-                cookies.removeAll {
-                    domainMatchesHost(it.domain, normalizedHost) ||
-                        domainMatchesHost(it.domain, "www.$normalizedHost")
-                }
-                val editor = preferences.edit()
-                    .remove(cacheScopeKey(host))
-                    // Remove both the current session-scoped keys and the
-                    // pre-session-scoped key used by older versions.
-                    .remove(legacyVerificationKey(host))
-                preferences.all.keys
-                    .filter { it.startsWith(verificationPrefix(host)) }
-                    .forEach(editor::remove)
+                editor.remove(ACTIVE_SHARED_SCOPE)
+                editor.remove(ACTIVE_EMAIL_DIGEST)
+                editor.remove(LEGACY_PRIMARY_HOST)
+                editor.remove(LEGACY_PRIMARY_IDENTITY)
                 editor.commit()
             }
-            persistLocked(durable = true)
+            cookies.clear()
+            val editor = preferences.edit()
+            preferences.all.keys
+                .filter {
+                    it.startsWith(CACHE_SCOPE_PREFIX) ||
+                        it.startsWith(VERIFIED_AT_PREFIX)
+                }
+                .forEach(editor::remove)
+            editor.commit()
+        } else {
+            memoryActiveHosts.remove(normalizedHost(host))
+            securePreferences?.edit()?.remove(activeAccountScopeKey(host))?.commit()
+            val normalizedHost = host.trim().lowercase().removePrefix("www.")
+            cookies.removeAll {
+                domainMatchesHost(it.domain, normalizedHost) ||
+                    domainMatchesHost(it.domain, "www.$normalizedHost")
+            }
+            val editor = preferences.edit()
+                .remove(cacheScopeKey(host))
+                // Remove both the current session-scoped keys and the
+                // pre-session-scoped key used by older versions.
+                .remove(legacyVerificationKey(host))
+            preferences.all.keys
+                .filter { it.startsWith(verificationPrefix(host)) }
+                .forEach(editor::remove)
+            editor.commit()
         }
+        persistLocked(durable = true)
+        true
     }
 
     private fun legacyCookie(host: String, name: String, value: String): Cookie {
