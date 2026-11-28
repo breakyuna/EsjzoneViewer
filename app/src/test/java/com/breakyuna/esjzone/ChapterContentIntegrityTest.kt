@@ -91,6 +91,7 @@ class ChapterContentIntegrityTest {
             """<p>前<ruby><span>漢<img src="/ruby.png">字</span><rt>かんじ</rt></ruby>后</p>""",
             "https://www.esjzone.cc/forum/1/2.html"
         ).body()
+        AppLogger.refreshLogs()
         val previousLogId = AppLogger.logsFlow.value.lastOrNull()?.id ?: 0L
 
         val parsed = analyseChapterContent(container) { error("Rich parser failed") }
@@ -100,6 +101,7 @@ class ChapterContentIntegrityTest {
         assertEquals(listOf("前漢", "", "字后"), parsed.blocks.map { it.sourceText() })
         assertEquals(ReaderBlock.Image("https://www.esjzone.cc/ruby.png"), parsed.blocks[1])
         assertTrue(isContentConserved(extractDomContentSnapshot(container), extractBlocksContentSnapshot(parsed.blocks)))
+        AppLogger.refreshLogs()
         assertTrue(AppLogger.logsFlow.value.any {
             it.id > previousLogId && it.tag == "ChapterIntegrity" &&
                 it.message == "Rich parser failed (IllegalStateException); switching to lossless fallback"
