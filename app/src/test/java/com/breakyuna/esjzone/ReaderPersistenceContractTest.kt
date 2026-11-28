@@ -91,4 +91,21 @@ class ReaderPersistenceContractTest {
         assertEquals(chapterIdentity(chapter), bookmarkChapterIdentity(newRow))
         assertTrue(oldRow.id != newRow.id)
     }
+
+    @Test
+    fun readerAnchorDecodeRejectsMalformedPayloadsAndAcceptsValidKinds() {
+        val validFp = "a".repeat(64)
+        assertNull(ReaderAnchor.decode(null))
+        assertNull(ReaderAnchor.decode("   "))
+        assertNull(ReaderAnchor.decode("not-json"))
+        assertNull(ReaderAnchor.decode("""{"version":1,"chapterKey":"","fingerprint":"$validFp","blockIndex":0,"offset":0,"kind":"text","fraction":0.0}"""))
+        assertNull(ReaderAnchor.decode("""{"version":1,"chapterKey":"/forum/1/2.html","fingerprint":"short","blockIndex":0,"offset":0,"kind":"text","fraction":0.0}"""))
+        assertNull(ReaderAnchor.decode("""{"version":1,"chapterKey":"/forum/1/2.html","fingerprint":"$validFp","blockIndex":0,"offset":0,"kind":"heading","fraction":0.0}"""))
+        assertNull(ReaderAnchor.decode("""{"version":1,"chapterKey":"/forum/1/2.html","fingerprint":"$validFp","blockIndex":-1,"offset":0,"kind":"text","fraction":0.0}"""))
+        assertNull(ReaderAnchor.decode("""{"version":1,"chapterKey":"/forum/1/2.html","fingerprint":"$validFp","blockIndex":0,"offset":0,"kind":"unknown","fraction":0.0}"""))
+        val heading = ReaderAnchor("/forum/1/2.html", validFp, -1, 0, kind = "heading")
+        assertEquals(heading, ReaderAnchor.decode(ReaderAnchor.encode(heading)))
+        val end = ReaderAnchor("/forum/1/2.html", validFp, -1, 0, kind = "end")
+        assertEquals(end, ReaderAnchor.decode(ReaderAnchor.encode(end)))
+    }
 }

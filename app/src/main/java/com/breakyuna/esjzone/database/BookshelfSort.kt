@@ -18,6 +18,7 @@ object BookshelfSort {
         RECENT_UPDATED
     }
 
+    private const val MAX_DATE_CACHE_SIZE = 512
     private val dateCache = ConcurrentHashMap<String, Long>()
 
     /**
@@ -84,6 +85,10 @@ object BookshelfSort {
         keyForUrl: (String) -> String,
         order: Order = Order.RECENT_READ
     ): List<BookshelfEntry> {
+        if (entries.isEmpty()) return entries
+        if (order != Order.RECENT_READ) {
+            return sortWithReadProvider(entries, order) { null }
+        }
         val latestByNovelId = HashMap<String, Long>()
         val latestByBookKey = HashMap<String, Long>()
 
@@ -103,29 +108,9 @@ object BookshelfSort {
             }
         }
 
-        // Resolve each row once before sorting. URL normalization and date
-        // parsing therefore remain O(n), rather than being repeated inside O(n log n) compares.
-        return entries.map { entry ->
-            RankedEntry(
-                entry = entry,
-                readAt = readingAt(entry, latestByNovelId, latestByBookKey, keyForUrl),
-                updatedAt = updatedAt(entry)
-            )
-        }.sortedWith(
-            Comparator { left, right ->
-                val comparison = when (order) {
-                    Order.RECENT_READ -> compareNullableDescending(left.readAt, right.readAt)
-                        .takeIf { it != 0 }
-                        ?: right.entry.addedAt.compareTo(left.entry.addedAt)
-                    Order.RECENT_ADDED -> right.entry.addedAt.compareTo(left.entry.addedAt)
-                    Order.RECENT_UPDATED -> compareNullableDescending(
-                        left.updatedAt, right.updatedAt
-                    ).takeIf { it != 0 }
-                        ?: right.entry.addedAt.compareTo(left.entry.addedAt)
-                }
-                comparison.takeIf { it != 0 } ?: left.entry.bookKey.compareTo(right.entry.bookKey)
-            }
-        ).map { it.entry }
+        return sortWithReadProvider(entries, Order.RECENT_READ) { entry ->
+            readingAt(entry, latestByNovelId, latestByBookKey, keyForUrl)
+        }
     }
 
     private data class RankedEntry(
@@ -173,6 +158,7 @@ object BookshelfSort {
             null
         }
         if (parsed != null) {
+            if (dateCache.size >= MAX_DATE_CACHE_SIZE) dateCache.clear()
             dateCache[normalized] = parsed
         }
         return parsed

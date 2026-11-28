@@ -102,12 +102,16 @@ fun EsjzoneClient.getExperienceRecords(
     val base = authorization.memberBase()
     val referer = EsjzoneUrls.resolve("/my/record", base)
     val url = experienceRecordUrl(base, type, offset, limit)
-    var body = requestExperienceRecords(authorization, url, referer, experienceRecordToken(authorization, referer))
-    if (experienceRecordStatus(body) == "301") {
+    var root = parseExperienceRecordRoot(
+        requestExperienceRecords(authorization, url, referer, experienceRecordToken(authorization, referer))
+    )
+    if (experienceRecordStatus(root) == "301") {
         checkRecordRequestActive()
-        body = requestExperienceRecords(authorization, url, referer, experienceRecordToken(authorization, referer))
+        root = parseExperienceRecordRoot(
+            requestExperienceRecords(authorization, url, referer, experienceRecordToken(authorization, referer))
+        )
     }
-    return parseExperienceRecordPage(body)
+    return parseExperienceRecordPage(root)
 }
 
 private fun EsjzoneClient.experienceRecordToken(authorization: Authorization, referer: String): String {
@@ -160,12 +164,15 @@ private fun EsjzoneClient.requestExperienceRecords(
     return body
 }
 
+private fun parseExperienceRecordRoot(body: String): JsonObject? =
+    runCatching { recordJson.parseToJsonElement(body.trim()) }.getOrNull() as? JsonObject
+
+private fun experienceRecordStatus(root: JsonObject?): String? =
+    (root?.get("status") as? JsonPrimitive)?.content?.trim()
+
 /** The application-level `status` of a table response, or null when it is not a JSON object. */
-internal fun experienceRecordStatus(body: String): String? {
-    val root = runCatching { recordJson.parseToJsonElement(body.trim()) }.getOrNull() as? JsonObject
-        ?: return null
-    return (root["status"] as? JsonPrimitive)?.content?.trim()
-}
+internal fun experienceRecordStatus(body: String): String? =
+    experienceRecordStatus(parseExperienceRecordRoot(body))
 
 /** True when a load failed because the site did not answer within the request budget. */
 internal fun Throwable.isRequestTimeout(): Boolean {
@@ -266,10 +273,14 @@ private val RECORD_NOTE_KEYS = listOf("non", "note", "memo", "description", "des
  * a number. Any `status` other than 200 is a failure; an unauthorized request
  * can answer `status: 301` with an empty row list, which must not read as "empty".
  */
-internal fun parseExperienceRecordPage(body: String): ExperienceRecordPage {
-    val root = runCatching { recordJson.parseToJsonElement(body.trim()) }.getOrNull() as? JsonObject
-        ?: throw ExperienceRecordException("Experience record response is not a JSON object")
-    val status = (root["status"] as? JsonPrimitive)?.content?.trim()
+internal fun parseExperienceRecordPage(body: String): ExperienceRecordPage =
+    parseExperienceRecordPage(parseExperienceRecordRoot(body))
+
+private fun parseExperienceRecordPage(root: JsonObject?): ExperienceRecordPage {
+    if (root == null) {
+        throw ExperienceRecordException("Experience record response is not a JSON object")
+    }
+    val status = experienceRecordStatus(root)
     if (status != "200") throw ExperienceRecordException("Experience record status $status")
     val rows = when (val raw = root["rows"]) {
         is JsonArray -> raw.mapNotNull(::parseExperienceRecord)

@@ -4,7 +4,7 @@
 
 - **审查范围**：全仓 `app/src/main/java/com/breakyuna/esjzone/` 全部 341 个 Kotlin 源文件（约 71.5k LOC），覆盖阅读器核心与渲染、网络/缓存/解析、离线下载与备份、存储与日志、数据库与领域模型、导航与页面交互。
 - **验证方式**：全部为静态源码与调用链审查，所有 P0 / P1 条目均已对照真实源文件行号与实际调用路径完成二次核实；不涉及编译、运行测试或读取敏感配置。
-- **整改进度**：全部 **11 项 P0 已完成整改**并同步更新单元测试源码与 `NETWORK/`、`docs/` 文档，且通过静态验证（`verify_static_contracts.py`、`git diff --check`；JVM 单元测试、Android Lint、构建与设备测试未运行）；第 7 节 10 项合理防御经核实全部保留；**P1（22 项）与 P2 尚未实施**。
+- **整改进度**：全部 **11 项 P0**、全部 **22 项 P1**（对应本地提交 `5651e0b`）以及 **P2 低影响/维护负担与死代码**均已完成整改并同步更新受影响的单元测试源码与 `NETWORK/`、`docs/` 文档，且通过静态验证（`verify_static_contracts.py`、`git diff --check`；JVM 单元测试、Android Lint、构建与设备测试未运行）；第 7 节 10 项合理防御经核实全部保留。
 - **判定原则**：严格区分**合理的工程防御**（如 Zip-Slip 防护、非破坏性鉴权检查、分页代际令牌、未登录态隔离等）与**过度防御**（在受信任本地路径重复做重型完整性/格式校验、服务端 SSRF 风格防御误用于移动端客户端、以“一处异常即全盘作废/阻断”取代局部降级、为兜底极小概率竞态而放大常态网络/IO/CPU 开销）。
 
 ### 分级标准
@@ -219,143 +219,177 @@
 
 ---
 
-## 5. P1 中影响问题详细分析（22 项，待处理）
+## 5. P1 中影响问题详细分析（22 项，全部已完成）
 
 ### 5.1 核心、存储、备份与日志
 
-1. **本地 JSON 双遍解析与下载预检全书重解压** — **性能：中 | 体验：中**
+1. **[✅ 已修复] 本地 JSON 双遍解析与下载预检全书重解压** — **性能：中 | 体验：中**
    - `util/BoundedJson.kt:16-69`、`offline/NovelDownloadStore.kt:192, 270, 1170, 1229-1248, 1419-1443, 2792-2794`
    - **问题**：`BoundedJson.readText()` 先拷贝整段字符串并用 `JsonReader` 逐 token 预扫一遍，再交给 Gson 解析第二遍；`reclaimSavedChapter`（L1239）每回收一章都重读并校验整章；下载预检（L1419-1443）重解压并校验整本书已下章节；`saveChapter`（L192, 270, 1170）对仅 ~15 KB 的阅读器自动保存硬性要求 100 MiB 剩余空间（注：`prepareJson:2792` 仅在迁移/`legacyPositions` 时重读）。
    - **建议**：对可信本地 JSON 移除预扫描；下载预检改读轻量索引元数据；降低小文件自动保存的可用空间阈值（如 4–8 MiB）。
+   - **整改落地**：`BoundedJson.readText()` 增加 `validateTokens` 开关（外部备份导入保持 `true`，受信任本地读取传 `false` 并保留 `MAX_CHARS` 上限）；`saveChapter()` 剩余空间阈值下调至 `4 MiB`；`reclaimSavedChapter()` 复用已验证内存快照；`download()` 普通增量预检信任 manifest + 非空文件，仅在显式选章或全书目标已全部标记完成时复验磁盘正文与插图；`prepareJson()` 改用写前 `BoundedCountingOutputStream`/`BoundedCountingWriter` 按解压口径流式校验 `MAX_BYTES` 与 `MAX_CHARS`，不再落盘重读。
 
-2. **PageCache 每次读写全量 HTML SHA-256、过期双解压与高频加解密计算作用域** — **性能：中**
+2. **[✅ 已修复] PageCache 每次读写全量 HTML SHA-256、过期双解压与高频加解密计算作用域** — **性能：中**
    - `network/PageCache.kt:182, 307, 345`、`network/EsjzoneClient.kt:228-259, 702-719`、`network/features/GetChapterDetail.kt:75-76`、`network/features/GetNovelDetail.kt:65-67`
    - **问题**：每次读写都对整份 HTML 算 SHA-256 并存入无界 `bodyFingerprints`；`writeDerived()`（L345）再从磁盘重读一次 HTML；过期缓存 `getPage()`（L228, 250）解压两次同一文件；`accountScope()`（L706-710）每次构造缓存键都读 `EncryptedSharedPreferences` 并对每个域名做 SHA-256。
    - **建议**：在内存缓存 `accountScope` 哈希（随登录/域名变化刷新）；移除 `bodyFingerprints` 冗余全量哈希；`writeDerived()` 直接复用内存中的 HTML；过期回退复用首次解压结果。
+   - **整改落地**：`PageCache` 移除 `bodyFingerprints` 与每次读写全量 HTML SHA-256，新增单次解压的 `readWithFreshness()`、`writeAndReference()` 与基于元数据的 `writeDerived()`；`EsjzoneClient` 新增 `getPageWithSource()`（且仅目标 `cacheKey` 或迁移成功结果透出 `sourceReference`，杜绝旧键引用覆盖新派生缓存）及按 `host`/凭据/`sessionEpoch`/`PersistentCookieJar.accountScopeRevision()` 失效的有界 `accountScopeCache`。
 
-3. **PageResponsePolicy 每次命中缓存拷贝全量小写 HTML 并触发误判 Jsoup 解析** — **性能：中**
+3. **[✅ 已修复] PageResponsePolicy 每次命中缓存拷贝全量小写 HTML 并触发误判 Jsoup 解析** — **性能：中**
    - `network/PageResponsePolicy.kt:82, 88, 164, 169-189`
    - **问题**：每次缓存读取均执行全量 `lowercase()` 字符串拷贝并内联编译 `Regex`；小说正文只要出现 `"captcha"` / `"access denied"` 等普通词即触发整份 `Jsoup.parse(lowerBody)`；文库8章节无条件 Jsoup 解析两次（L82 + `ExternalChapterHtml:39`）。
    - **建议**：已验证落盘的缓存无需重复走拦截页检测；正则提取为 `private val` 常量；缩小检测窗口到 `<head>`/小体积响应；消除文库8双解析。
+   - **整改落地**：`PageResponsePolicy` 移除全量 `lowercase()` 拷贝与内联正则，存在 ESJ 结构标记且无活跃挑战 DOM 标记时跳过 `Jsoup.parse`；`PageCache` 为通过策略校验写入的条目首行添加 `|v4` 标记并透出 `Entry.validated`，`EsjzoneClient`、`GetNovelDetail` 与 `GetCommunity` 对已标记缓存走快路径、对未标记旧缓存复用 `PageResponsePolicy.validate` 并在无效时清理；`WenkuChapterClient` 消除文库8双次 Jsoup 解析。
 
-4. **图片传输拦截器首字节前双调 `usableSpace` 且 64 MiB 底线误阻纯内存图片** — **体验：中 | 性能：低**
+4. **[✅ 已修复] 图片传输拦截器首字节前双调 `usableSpace` 且 64 MiB 底线误阻纯内存图片** — **体验：中 | 性能：低**
    - `network/ImageTransferInterceptor.kt:18-27`
    - **问题**：`nextSpaceCheck = 0L` 导致第 1 字节前即连续调用两次 `usableSpace` 系统调用；64 MiB 剩余空间硬底线会直接拦截小体积、甚至仅加载到内存的 Coil 图片请求。
    - **建议**：首次检查后正确推进 `nextSpaceCheck`；仅在写入磁盘缓存或下载大文件时限制空间，允许低存储下正常解码小图到内存。
+   - **整改落地**：`ImageTransferInterceptor` 移除读取前重复 `checkSpace()`，将 `nextSpaceCheck` 初值改为 `SPACE_CHECK_INTERVAL`（1 MiB），避免首字节前双调 `usableSpace` 并允许低存储下正常加载小图。
 
-5. **本地备份跳过 `downloads/` 仍先解压并计入剩余空间限额** — **体验：中**
+5. **[✅ 已修复] 本地备份跳过 `downloads/` 仍先解压并计入剩余空间限额** — **体验：中**
    - `backup/LocalBackup.kt:191-238, 373-379`
    - **问题**：用户仅恢复书签/设置（跳过 `downloads/`）时，仍会解压跳过的条目并将其字节数计入 `usableSpace - 64 MiB` 配额，低存储下导致轻量元数据恢复失败；每个 ZIP 条目均调 `canonicalFile`（L376）且 `seen` 集合最多容纳 20 万条。
    - **建议**：先判断路径是否跳过，跳过项直接 `continue` 不解压、不计入空间配额。
+   - **整改落地**：`LocalBackup.restore()` 拆分流处理上限（`16 GiB`）与落盘上限（`min(16 GiB, usableSpace - 64 MiB)`），跳过项与目录项不调用 `safeEntry`、不计入磁盘空间配额，同时统一按 64 KiB 分块排空并受 `checkActive()` 与流上限约束；保留提取项的 `safeEntry` Zip-Slip 防护，并同步更新 `docs/maintenance-notes.md`。
 
-6. **日志系统每条跑 6 次正则 + 拷贝 500 项列表 + 每次落盘 3 次 SAF IPC** — **性能：中**
+6. **[✅ 已修复] 日志系统每条跑 6 次正则 + 拷贝 500 项列表 + 每次落盘 3 次 SAF IPC** — **性能：中**
    - `util/AppLogger.kt:42, 118-137, 202, 282-328`、`util/PublicLogWriter.kt:62-82`、`storage/StorageFile.kt:159-173, 397-424`
    - **问题**：单条 `AppLogger.log()` 运行 6 个正则脱敏、新建 `SimpleDateFormat` 并复制最多 500 条日志列表；开启公共目录日志时，`PublicLogWriter.flush()` + `StorageFile.appendText()` 每行日志触发 3+ 次 SAF Binder IPC。另 `DocumentTree.metadata()`（`StorageFile.kt:400, 419`）在子文件不存在时额外补一次根 `metadata("")` Binder IPC。
    - **建议**：脱敏正则与时间格式器复用（`ThreadLocal` 或 `DateTimeFormatter`）；环形缓冲替代整表拷贝；公共目录日志批量攒批写入并缓存文档 URI，去除多余根 `metadata("")` 探测。
+   - **整改落地**：`AppLogger` 改用共享 `DateTimeFormatter`、`ArrayDeque`、脱敏快筛预检与按订阅者按需拷贝 `_logsFlow`（联动 `LogsPage.refreshLogs()`），合并延迟刷盘；`PublicLogWriter` 缓存目录/活跃文件句柄并攒批写入；`StorageFile.appendText()` 复用已解析文档 URI 并按异常重建，`DocumentTree.metadata()` 移除多余根 `metadata("")` 探测。
 
-7. **冷启动永久跑 8 次 Room `DELETE` 与 Release 保留 60 秒看门狗线程** — **性能：中（冷启动）**
+7. **[✅ 已修复] 冷启动永久跑 8 次 Room `DELETE` 与 Release 保留 60 秒看门狗线程** — **性能：中（冷启动）**
    - `data/settings/SettingsDataStore.kt:186-196`、`EsjzoneApplication.kt:32-36`
    - **问题**：即使旧 Room 设置已迁移完毕，每次冷启动仍执行 8 条 `DELETE` 语句；Release 包每次启动都会拉起常驻 60 秒的 `StartupWatchdog` 后台线程。
    - **建议**：Room 旧键清理受迁移完成标记保护，仅迁移时执行一次；`StartupWatchdog` 仅在 `BuildConfig.DEBUG` 启用。
+   - **整改落地**：`SettingsDataStore` 新增 `legacy_room_cleanup_complete` 持久化标记门控 8 条 Room `deleteByKey`；`EsjzoneApplication` 仅在 `BuildConfig.DEBUG` 下启动 `StartupWatchdog`。
 
 ### 5.2 网络特性、URL 路由与 HTML 解析
 
-8. **URL 校验拒绝 Query/Fragment（及 `http://`），阻断分享链接与原生路由** — **体验：中**
+8. **[✅ 已修复] URL 校验拒绝 Query/Fragment（及 `http://`），阻断分享链接与原生路由** — **体验：中**
    - `network/EsjzoneUrls.kt:24-36`（`novelDetailUrl`）、`ui/navigation/ForumLinkRoute.kt:30-38`（`nativeSitePath`）
    - **问题**：`novelDetailUrl()` 拒绝 `http://`、任意 query 与 fragment；`nativeSitePath()` 虽允许 `http://`（80 端口），但同样拒绝任何 query 或 fragment。带追踪参数或锚点（如 `#comment-123`）的合法分享链接会被拒收或降级到外部浏览器。
    - **建议**：校验协议与主机后按规范剥离无关 query/fragment（或允许已知安全锚点），统一归一化为目标详情/论坛路径。
+   - **整改落地**：`EsjzoneUrls.novelDetailUrl()` 对可信镜像默认端口详情路径自动升级 `http://` 为 `https://` 并剥离 `query`/`fragment`（仍拒绝 `userinfo` 与非数字 ID）；`ForumLinkRoute.nativeSitePath()` 放行常见无害追踪参数（`utm_*`、`fbclid`、`gclid`、`spm` 等），同时保留非空 `fragment`（如 `#myQA`）及非追踪参数（如 `?uid=`）回退 WebView；已同步更新 `EsjzoneUrlsTest.kt` 与 `docs/maintenance-notes.md`。
 
-9. **登录每次新建完整 `OkHttpClient` 线程池，且 `InvalidResponse` 掩盖网络错误** — **性能：中 | 体验：中**
+9. **[✅ 已修复] 登录每次新建完整 `OkHttpClient` 线程池，且 `InvalidResponse` 掩盖网络错误** — **性能：中 | 体验：中**
    - `network/features/Login.kt:50-56, 72, 101, 136-139`、`network/features/ParallelMirrorLogin.kt:65-66`
    - **问题**：`loginWithOutcome` 每次调用都 `OkHttpClient.Builder()` 新建独立 `ConnectionPool` 与 `Dispatcher` 线程池（并行多镜像 × 最多 2 次重试），而非基于 `sharedHttpClient.newBuilder()` 派生。另重定向主机不符或泛化 `catch (Exception)` 返回 `InvalidResponse`，被 `ParallelMirrorLogin` 视作 `receivedServerResult = true`，掩盖真实的 `IoFailure`。
    - **建议**：基于 `sharedHttpClient.newBuilder()` 复用底层连接池与线程调度器；区分网络/重定向异常与真实服务端业务响应。
+   - **整改落地**：`EsjzoneClient` 新增 `loginClient(cookieJar)` 基于 `sharedHttpClient.newBuilder()` 复用连接池与调度器；`Login.kt` 将非 2xx HTTP 状态与异常重定向主机归类为 `IoFailure`；`ParallelMirrorLogin.kt` 仅对明确业务拒绝 `NonSuccessStatus` 置 `receivedServerResult = true`，使 `InvalidResponse` 不再掩盖另一镜像的 `IoFailure`；已同步更新 `ParallelMirrorLoginTest.kt` 与 `NETWORK/AUTH.md`。
 
-10. **首页数据重复读快照、吞掉 `CancellationException` 且卡片解析做无效 DOM 扫描** — **性能：中 | 体验：中**
+10. **[✅ 已修复] 首页数据重复读快照、吞掉 `CancellationException` 且卡片解析做无效 DOM 扫描** — **性能：中 | 体验：中**
     - `network/features/GetHomeData.kt:39, 62-112, 132, 248-258`、`network/features/NovelCardParser.kt:78-118, 120-209`
     - **问题**：`getHomeData` 两次读取并反序列化 `HomeDataCache.readSnapshot`（L39, L132）；5 个分区的 `catch (e: Exception)` 会吞掉 `CancellationException` 并在单卡异常时放弃该分区剩余条目；`enrichWeeklyPopular` L257 内联编译 `Regex` 且存在重叠选择器。`NovelCardParser` 在 `NovelCardLayout.HOME` 布局下仍执行 `AUTHOR_LINK` 与 3 次 `statCount` 多选择器 DOM 扫描后再用 `.takeIf { isList }` 丢弃，每次首页/周更加载浪费 50–100+ 张卡片的 DOM 遍历。
     - **建议**：单次读取快照；重新抛出 `CancellationException` 并按卡片隔离错误；`NovelCardParser` 先判断 `isList` 再执行列表专属选择器，合并冗余 `.icon-X` 选择器。
+    - **整改落地**：`GetHomeData` 单次读取 `HomeDataCache.readSnapshot`，通过 `parseHomeSectionCards` 按卡片隔离异常并重抛 `CancellationException`，提升 `TYPE_LABEL_PREFIX_REGEX` 常量并去重标签选择器；`NovelCardParser` 在 `HOME` 布局跳过 `LIST` 专属 DOM 查询并简化 `.icon-X` 选择器。
 
-11. **章节块提取平方级 DOM 遍历与评论解析循环内重复编译 `Regex`** — **性能：中**
+11. **[✅ 已修复] 章节块提取平方级 DOM 遍历与评论解析循环内重复编译 `Regex`** — **性能：中**
     - `novellibrary/component/Component.kt:50-188, 351-357`、`network/features/GetCommunity.kt:392, 574, 943-1107, 1139-1147`
     - **问题**：`extractParagraphElements` / `analyseParagraph` 反复调用 `hasBlockDescendants()`、`containsBlockElement()` 与 `selectFirst("img")` 造成 O(D×N) 嵌套遍历与节点克隆，`parseStandaloneColor` 每个 `<font color>` 重编译正则；`GetCommunity` 在逐条评论/逐属性循环中反复新建 `Regex`（L574, 1066-1067, 1105, 1140, 1147），缺 `id` 时用整段 `outerHtml()` 做哈希去重（L952）。
     - **建议**：所有 `Regex` 提升为文件级/伴生对象常量；`Component.kt` 改为自底向上单遍判定块级节点，避免重复子树扫描。
+    - **整改落地**：`Component.kt` 用迭代自底向上 `computeBlockDescendants` 与 `imgAncestors`（`IdentityHashMap`）替代平方级子树扫描并提升颜色正则；`GetCommunity.kt` 提升循环内 7 处正则为常量，并用 `System.identityHashCode` 替代缺失 `id` 时的 `outerHtml().hashCode()`。
 
 ### 5.3 数据库、领域层与持久化
 
-12. **旧章节 `withFormatting` 命中无排版分支时不升级版本，导致每次打开重跑 Jsoup** — **性能：中**
+12. **[✅ 已修复] 旧章节 `withFormatting` 命中无排版分支时不升级版本，导致每次打开重跑 Jsoup** — **性能：中**
     - `data/reader/ChapterFormatting.kt:266-312`
     - **问题**：即便 `parserVersion >= 2` 仍每次缓存读取都重检全部对齐/分隔/折叠索引；且 L304 在无有效对齐/分隔或不匹配时直接 `return this` 而不递增 `parserVersion`，导致包含相关标记的旧快照每次打开都重跑 `Jsoup.parseBodyFragment` 与整章 `analyseChapterContent`。
     - **建议**：已达当前 `parserVersion` 的快照跳过全量索引复验；处理完毕后持久化更新 `parserVersion` 防止反复解析。
+    - **整改落地**：`ChapterFormatting.withFormatting` 对已达 `CURRENT_PARSER_VERSION` 且布局字段非空的快照直接快返，并在无标记/确定性空布局/不匹配分支通过 `upgradedFormatting()` 升级版本号（Jsoup 异常时不升级）。
 
-13. **书架缩略图双编码（WebP + JPEG）并经历 3–4 个临时文件** — **性能：中**
+13. **[✅ 已修复] 书架缩略图双编码（WebP + JPEG）并经历 3–4 个临时文件** — **性能：中**
     - `database/BookshelfCoverThumbnail.kt:14-53`
     - **问题**：对每张不透明静态封面创建 3 个临时文件，分别编码为 WebP-82 与 JPEG-85 仅为了挑体积较小的那份，再把胜出者拷贝到第 4 个临时文件 `pending` 后才原子移动到目标路径，使书架封面冷加载 CPU 与磁盘 I/O 翻倍。
     - **建议**：直接使用 WebP-82（API 29+ 全平台原生支持且体积稳定优于 JPEG）并单次写入临时文件后直接 `renameTo` 目标路径。
+    - **整改落地**：`BookshelfCoverThumbnail` 改为单临时文件 `pending` + 单次 WebP-82 编码（API 30+ 使用 `WEBP_LOSSY`，API 29 使用 `WEBP`）并原子重命名，保留动图回退逻辑。
 
-14. **书架后台补全对无作者/无封面书每 30 分钟无限重试，同步存在 N 次非事务写入** — **性能/流量：中**
+14. **[✅ 已修复] 书架后台补全对无作者/无封面书每 30 分钟无限重试，同步存在 N 次非事务写入** — **性能/流量：中**
     - `database/BookshelfRepository.kt:80-85, 148-153, 357-501, 522-672`
     - **问题**：站点本身缺少封面或作者的小说持续满足 `coverUrl.isBlank() || author.isBlank()`（L425-433），导致每 30 分钟无限重拉详情页 HTML；`sync` 在 `toggleFavorite` 前后多查两次 `dao.find`（SQL `WHERE operation_version = :version` 已原子保护），且 L626-651 在事务外循环执行 N 次 `findAnyWithCover` + `insertIfAbsent`（N 次独立 SQLite 提交）；`setCoverState` 每次分配 4 个集合，`novelIdFor` 循环内重编译正则。
     - **建议**：记录补全失败/空结果的冷却时间或已检查版本；将 `sync` 批量插入移入同一数据库事务并去掉冗余 `dao.find`；正则提取为常量。
+    - **整改落地**：`BookshelfRepository` 提升 `DETAIL_ID_REGEX` 常量、`setCoverState` 改用有界 `LinkedHashMap(256)`、新增 `MetadataAttempt` 完成态与失败退避、移除 4 处冗余 `dao.find`，并将 `sync()` 远端对账与批量导入包裹进单次 `withTransaction`。
 
-15. **标题自愈在每次会话恢复执行 4 次无索引全表扫描，且对 404 小说无负缓存无限请求** — **性能/流量：中**
+15. **[✅ 已修复] 标题自愈在每次会话恢复执行 4 次无索引全表扫描，且对 404 小说无负缓存无限请求** — **性能/流量：中**
     - `database/NovelTitleRepository.kt:30-56, 101-145`、`ui/navigation/AppNavigation.kt:692`
     - **问题**：每次会话/存储恢复都运行 `repairAll()`，对 4 张表执行前导通配符 `LIKE '%/detail/%'` 全表扫描 + 扫描下载目录；对已删/404 书籍，`resolve()` 反复查询全部 5 个本地存储并串行发起 `getNovelDetail` HTTP 请求，**没有任何负缓存或重试上限**。
     - **建议**：增加负缓存（如失败记录退避 7 天或按次数封顶），避免每次启动都做全表通配扫描与重复拉取已失效详情页。
+    - **整改落地**：`NovelTitleRepository` 新增持久化负缓存与指数退避（404/410/空标题退避 7 天）及 24 小时自动扫描冷却；`AppNavigation` 仅在显式修复请求（`request > 0L`）时传 `force = true`。
 
-16. **单条损坏划线抛异常拖垮全章划线与备份恢复，且热路径重复算 SHA-256** — **体验：中 | 性能：中**
+16. **[✅ 已修复] 单条损坏划线抛异常拖垮全章划线与备份恢复，且热路径重复算 SHA-256** — **体验：中 | 性能：中**
     - `domain/reader/ReaderUnderline.kt:43-46, 86-155`、`ui/reader/ReaderUnderlinesModel.kt:27`、`backup/LocalBackup.kt:259`
     - **问题**：`decode()` 对列表内任意一条格式异常/越界划线直接 `require` 抛异常，导致 `ReaderUnderlinesModel` 隐藏整章所有正常划线，或导致 `LocalBackup` 整次恢复中止；`signature()` 未缓存 `MessageDigest`，使用 `$block` 拼接完整 span 字符串并逐字节 `"%02x".format`，在加载和迁移时多次执行。
     - **建议**：`decode()` 改为逐条校验、跳过损坏单条并保留有效划线；用轻量文本哈希或共享十六进制编码替代 `"%02x".format` 循环。
+    - **整改落地**：`ReaderUnderline.kt` 的 `signature()` 改用 `ThreadLocal<MessageDigest>` 流式字节摘要与 `CharArray(64)` 编码并按块缓存 `sourceSignature`；`decode()` 改为 `mapNotNull` 逐条校验跳过损坏项（非法根 JSON 仍保持抛出 `JsonParseException`/`IllegalArgumentException`）；已同步更新 `ReaderUnderlinesTest.kt`。
 
 ### 5.4 UI、导航、全局文本与阅读器外围
 
-17. **`AppNavigator.pushIfNotCurrent` 搜索全栈并销毁中间页面；会话修订号变化卸载整个导航树** — **体验：中 | 性能：中**
+17. **[✅ 已修复] `AppNavigator.pushIfNotCurrent` 搜索全栈并销毁中间页面；会话修订号变化卸载整个导航树** — **体验：中 | 性能：中**
     - `ui/navigation/AppNavigation.kt:327-343, 633-654, 757-764`
     - **问题**：
       - `pushIfNotCurrent`（全仓约 50 处导航调用）未仅检查栈顶 `backStack.lastOrNull()`，而是 `indexOfLast` 搜索整条返回栈并把目标页之上的**全部中间页面弹出销毁**，导致从帖子/搜索跳到曾看过的页面时丢失浏览路径。
       - `remember(currentDomain, loginSessionRevision)` 重置 `sessionRestored = false` 与 `authorization = null`，L757 直接卸载整棵 `NavDisplay` 树并全屏闪烁 `SessionLoadingContent()`，尽管 `MainScreen` 与 `FavoritePage` 已在原位响应 `loginSessionRevision`。
     - **建议**：`pushIfNotCurrent` 仅防抖/去重栈顶项（需回退到已有项时另设显式方法）；会话修订号更新仅后台静默刷新 `authorization` 状态，不重置 `sessionRestored`、不卸载 `NavDisplay`。
+    - **整改落地**：`pushIfNotCurrent` 改为仅去重栈顶路由并为每次入栈的 `AppNavKey.Legacy` 分配唯一可序列化 `instanceId`，同时在 `AppNavigation.kt` 与 `AdaptiveShell.kt` 按实例键注册/查找/清理页面对象，彻底隔离同路由多实例状态；根导航不再因会话变更重置 `sessionRestored` 闪白屏，改以 `LocalAuthorizationSessionGeneration` 驱动各 Tab `NavDisplay` 与根 `Legacy` 条目在保留返回栈的前提下按代际重建持有 `authorization` 的 ViewModel；已同步更新 `NavigationRouteContractTest.kt`。
 
-18. **`GlobalText.convertAnnotatedText` 对每个 Span 边界重复前缀转换，O(M×N) 且污染全局缓存** — **性能：中**
+18. **[✅ 已修复] `GlobalText.convertAnnotatedText` 对每个 Span 边界重复前缀转换，O(M×N) 且污染全局缓存** — **性能：中**
     - `ui/designsystem/GlobalText.kt:111-118`
     - **问题**：开启简繁转换渲染 `AnnotatedString` 时，对每个唯一 Span 边界调用 `substring(0, index)` 重新转换整段前缀，形成 O(M×N) 复杂度，并把大量仅使用一次的截断前缀写入全局 4096 项 `ReaderScriptConverter.convertCache`，挤出真正可复用的正文段落缓存。
     - **建议**：基于单次整段转换构建字符偏移映射表（或按 Span 分段增量转换），不再写入截断前缀到共享 LRU 缓存。
+    - **整改落地**：`GlobalText.convertAnnotatedText` 改用单次 `ReaderScriptConverter.mapping` 配合 `sourceStarts`/`sourceEnds` 二分查找映射 Span 边界，消除 O(M×N) 前缀转换与缓存污染。
 
-19. **章节含 `<a>` 链接时整章重跑第二次 Jsoup，且单块失配即清空全章链接** — **性能：中 | 体验：中**
+19. **[✅ 已修复] 章节含 `<a>` 链接时整章重跑第二次 Jsoup，且单块失配即清空全章链接** — **性能：中 | 体验：中**
     - `ui/reader/ReaderLinks.kt:17-62`、`ui/reader/ReaderDocument.kt:43-57`
     - **问题**：只要章节含任意 `<a>` 标签，就会重新完整执行一次 `Jsoup.parseBodyFragment` + `parseRichChapterContent`；对齐逻辑（L28-39）采用全有或全无模式，任意 1 个块的 `sourceText()` 或数量不一致就返回 `emptyMap()`，静默丢弃整章所有可点击链接。
     - **建议**：在主解析阶段一次性保留链接元数据（或放宽为按块模糊/逐块匹配，不再因局部偏差清空整章链接）。
+    - **整改落地**：`ReaderDocument` 将 `DetailedChapter.content` 传入 `ReaderLinks.readerChapterLinks` 直接复用已解析 `LinkTextStyle` 避免第二次 Jsoup；`alignComponentLinks` 改为逐块锁步 + 有界对角重同步恢复，不再因单块失配清空整章链接（且不改动 `ChapterBody.digest`）。
 
-20. **首页热门轮播每补全 1 张卡即全量写盘 JSON 并卡住轮播** — **性能：中 | 体验：中**
+20. **[✅ 已修复] 首页热门轮播每补全 1 张卡即全量写盘 JSON 并卡住轮播** — **性能：中 | 体验：中**
     - `ui/tab/HomeTabModel.kt:282-304`、`ui/tab/HomeSections.kt:128-139, 165`
     - **问题**：循环内每补全 1 张热门卡（每次停顿 2 张，最多覆盖整个轮播）都调用 `HomeDataCache.writeSnapshot`（`ioLock` 下全量 Gson 序列化 + 临时文件写盘 + 原子重命名）并触发整页状态重组；同时 `enriching` 为真期间跳过自动轮播计时。
     - **建议**：批量完成本轮补全后合并写入一次状态与磁盘快照；后台补全详情不阻断轮播翻页。
+    - **整改落地**：`HomeSections` 移除阻断轮播自动翻页的 `enriching` 门控；`HomeTabModel.loadVisiblePopular` 每张卡成功后即时更新内存状态避免翻页取消丢弃已取成果，并在 `finally` 中异步合并单次写盘，同时在 `HomeDataCache` 锁内校验 `snapshotVersion` 防止旧轮播写盘覆盖更新后的周更/主页快照。
 
-21. **小说详情转场包装器双倍收集 `StateFlow`，把已缓存详情拖在骨架屏上** — **性能：中 | 体验：中**
+21. **[✅ 已修复] 小说详情转场包装器双倍收集 `StateFlow`，把已缓存详情拖在骨架屏上** — **性能：中 | 体验：中**
     - `ui/page/NovelDetailPresentation.kt:18-47`、`ui/page/NovelPage.kt:239, 386`
     - **问题**：L39 调用 `source.collectAsStateWithLifecycle()` 仅为了读 `initial`，同时 L42 又在 `combine(source, ...)` 里收集第二次；转场期间前者仍触发无意义重组，而后者把瞬时可用的本地/缓存详情强行按在静态 `LoadingSkeleton` 上等待 ~300–400 ms 动画结束后才突然弹出。
     - **建议**：直接用 `source.value` 作初值去除重复收集；已命中缓存/已下载的小说详情直接渲染，无需强等转场结束。
+    - **整改落地**：`NovelDetailPresentation` 去除重复的 `source.collectAsStateWithLifecycle()`，并对已命中的 `State.Result` 立即渲染，不再拖在骨架屏上等待转场结束。
 
-22. **历史页每次变更全量扫描下载进度、封面与成人校验抢 2 并发槽并致行闪烁** — **性能：中 | 体验：低-中**
+22. **[✅ 已修复] 历史页每次变更全量扫描下载进度、封面与成人校验抢 2 并发槽并致行闪烁** — **性能：中 | 体验：低-中**
     - `ui/page/HistoryPage.kt:679-683, 709-717, 818-823, 1065, 1117-1128, 1232-1263`、`ui/page/LocalHistoryLoading.kt:37-47`
     - **问题**：每次 Room/下载状态变更都在 `collectLatest` 中对全部本地历史行逐一执行 `downloads.refreshProgress(activity)`；封面恢复与成人状态校验共用 `coverPermits = Semaphore(2)`（L1065），大量缺封面时饿死成人校验；云端历史每可见行启一个 `Dispatchers.Default` 协程仅做线性 URL 查找（L818-823）；`key(cover.image)`（L709）在封面加载完成时销毁重建整个 `AppNovelCover`。
     - **建议**：按变更的小说 ID 增量刷新进度；拆分封面与成人校验信号量；云端章节序号预建 `Map` O(1) 查找；移除 `key(cover.image)` 避免组件重建闪烁。
+    - **整改落地**：`NovelDownloadStore` 新增按书追踪的 `progressVersionFor()`，`LocalHistoryLoading` 据此增量刷新进度；`HistoryPage` 拆分 `coverPermits`（2）与 `adultStatusPermits`（3）、为云端历史预建 O(1) `chapterIndexMap`，并移除导致封面闪烁的 `key(cover.image)`。
 
 ---
 
-## 6. P2 低影响 / 维护负担与死代码汇总（待处理）
+## 6. P2 低影响 / 维护负担与死代码汇总（全部已完成）
 
 - **一次性迁移与低频路径**：
-  - `ui/reader/ReaderUnderlineMapping.kt:57-74` + `ui/page/ChapterPage.kt:1047-1068`：8 种简繁×替换组合的旧划线迁移因判等检查执行了 2 遍，但受 `hasLegacyRanges` 门控仅一次性触发。
-  - `network/features/RemoveHistory.kt:48`：云端批量删历史遇到 1 条远端已不存在的旧记录即 `if (!accepted) break` 中断剩余有效项（空白 `vid` 已在 `HistoryPageModel.kt:124` 过滤）。
-  - `network/features/GetFavorites.kt:34-57`：`complete = true, allowFallback = false` 是书架同步安全对账所必需，仅单页 `networkAttempts = 3` 略偏保守。
-  - `network/features/GetMemberRecords.kt:105-110, 260-322`：经验记录 JSON 被解析两次且未知字段以 `"key: value"` 暴露到 `extras`（`recordText` 已用 `contains('<')` 守护 Jsoup）。
-  - `novellibrary/novel/Chapter.kt:16-50` + `NovelChapterList.kt:17-58` + `Item.kt:98-103`：`Chapter.source` / `isExternal` 未缓存结果，重复做 `HttpUrl` 解析（`Item.kt:100` 的文库8过滤在现行 UI 中未走入）。
+  - ✅ `ui/reader/ReaderUnderlineMapping.kt` + `ui/page/ChapterPage.kt`：旧划线迁移闭包对未变更的 `rows` 直接复用已计算的 `migrated` 快照，消除重复执行 2 遍 8 种简繁×替换组合。
+  - ✅ `network/features/RemoveHistory.kt`：经复核，站点仅确认删除成功状态 `status == 200`，未证实存在可安全跳过的单条拒绝业务码，因此保留原“遇到未确认响应立即停止批次”的写安全策略（归属合理防御）。
+  - ✅ `network/features/GetFavorites.kt`：保留书架完整对账所需的 `complete = true, allowFallback = false`，单页 `networkAttempts` 从 `3` 下调至 `2`。
+  - ✅ `network/features/GetMemberRecords.kt`：`getExperienceRecords` 改为单次 JSON 解析复用已解析的 `JsonObject` 检查 `301` 与构造分页结果，消除二次反序列化（`extras` 保留未知字段向前兼容契约以维持既有 `MemberCenterRecordsTest` 与 UI 行为）。
+  - ✅ `novellibrary/novel/Chapter.kt` + `NovelChapterList.kt` + `novellibrary/component/Item.kt`：`Chapter.source` 以 `@Transient @Volatile` 惰性缓存避免重复 `HttpUrl` 解析；`NovelChapterList.init` 改为单遍遍历 `orderedChapters`；`ChapterItem` 改用 `!chapter.isExternal` 统一判定可阅读章节。
 - **轻量性能/体验毛刺**：
-  - `ui/page/FavoritePage.kt:205-219`（本地书架渲染被全量历史 `refreshProgress` 阻塞）、`ui/page/SettingsPageModel.kt:189-199`（串行登出全部镜像，单镜像超时拖慢退出）、`ui/page/UnderlinesPage.kt:166-179`（单条损坏划线致整页永久错误无法重试）、`ui/page/ReaderBackgroundPageModel.kt:39-41, 99-154`（滑块无防抖频繁模糊且禁用应用键；保存时 `BackHandler` 锁退）、`ui/page/DownloadPage.kt:158-160, 235-243`（单次刷新读元数据两遍）、`ui/page/ChapterPage.kt:791-806, 1433, 1464`（切换书签全表加载 `bookmarkDao.getAll()` 两遍）、`ui/reader/ReaderSidePanels.kt:54-72, 145-212`（拒绝手势后仍分配 `VelocityTracker` 与双 pass 监听）。
-  - `database/BookmarkCoverStore.kt:192-208`、`database/BookshelfSort.kt:21, 81-129`、`domain/reader/ReaderPosition.kt:118-128`、`util/CommentRequestTiming.kt:11-62`（Release 仍打 5–10 条计时日志）、`network/features/HomePageParser.kt:16-69`（先查 5 次站点不输出的 `[data-home-section]` 属性）、`network/features/IsAuthorized.kt:54-68, 100-133`、`network/features/ProfilePageParser.kt:9-72`、`storage/StorageFile.kt:331`（`(0 until count).all`）。
+  - ✅ `ui/page/FavoritePage.kt` + `FavoritePageModel.kt`：`loadingShelf` 不再被 `readingSnapshot == null` 阻塞首次渲染；`collectLocalHistory` 接入 `progressVersionFor` 增量刷新下载进度。
+  - ✅ `ui/page/SettingsPageModel.kt` + `network/features/Logout.kt`：抽出不提前清本地会话的 `requestRemoteLogout`，先并发完成全部镜像的远端登出请求，再统一调用 `clearSession()` 与清理旧凭据；整段已确认登出流程置于 `NonCancellable` 内，防止退出设置页中断本地会话清理。
+  - ✅ `ui/page/UnderlinesPage.kt`：移除 `check(!unreadable)`，单条损坏划线记录仅记警告并跳过，不再将整页永久锁死在错误态。
+  - ✅ `ui/page/ReaderBackgroundPageModel.kt` + `ReaderBackgroundPage.kt`：模糊滑块预览增加 120 ms 防抖、`canApply` 不再因预览重算闪烁禁用、`apply()` 取消进行中的预览任务，并解除保存时 `BackHandler` 与返回键锁退；`initialLoad` 加 `savedPhotoMutex.withLock` 与后台保存串行，防止退出立即重进读到即将被删除的旧文件。
+  - ✅ `ui/page/DownloadPage.kt` + `offline/NovelDownloadStore.kt`：移除 `deleting` 导致的删除后双刷新；`listDownloadedNovels` 仅在 `inventorySnapshot == null` 的缓存缺失分支锁外构建 `metadataByKey` 复用 `metadataSnapshot`（避免缓存命中时持锁遍历全量元数据），并在 `onMetadata` 回调中保留已计算的文件大小。
+  - ✅ `ui/page/ChapterPage.kt` + `database/BookmarkCoverStore.kt` + `database/dao/BookmarkDao.kt`：新增按去除了 `#fragment`/`?query` 的基路径预筛选的 `forChapterKey` 与轻量投影 `coverRefs()`，以 `BookmarkCoverStore.hasBookmarksForNovel` 复用 `cleanNovelId` 规则并在确认无书签后直接 `deleteCover` 避免重复查询，同时提升 `BookmarkCoverStore` 内联正则为常量。
+  - ✅ `ui/reader/ReaderSidePanels.kt`：已拒绝手势直接早退，惰性分配 `VelocityTracker`，竖向滚动/多指/消费拦截即刻跳出循环停止双 pass 监听。
+  - ✅ `database/BookshelfSort.kt`：`dateCache` 加上限（512），`sort()` 按排序方式分支委托 `sortWithReadProvider` 跳过无关映射与日期解析。
+  - ✅ `domain/reader/ReaderPosition.kt`：提升 `FINGERPRINT_PATTERN` 与 `VALID_KINDS` 常量，`decode` 改用条件校验替代异常流；同步补充 `ReaderPersistenceContractTest.kt`。
+  - ✅ `util/CommentRequestTiming.kt`：仅在 `BuildConfig.DEBUG` 下采集与输出计时日志，Release 零日志与计时开销。
+  - ✅ `network/features/HomePageParser.kt`：保持语义标记优先于 DOM 位置以保障 R18 分区隔离（仅简化 `.card` 选择器），并补充语义标记与 DOM 位置冲突布局的回归测试（`NovelCardParserTest.kt`）。
+  - ✅ `network/features/IsAuthorized.kt`：移除 403 二次同步重试，对重定向登录/401/403/非 2xx/空响应短路返回跳过无意义的 `Jsoup.parse`；同步更新 `NETWORK/AUTH.md`。
+  - ✅ `network/features/ProfilePageParser.kt`：`profileCardText` 改为 `asSequence()` 惰性取文本，并提升空白正则为常量。
+  - ✅ `storage/StorageFile.kt`：`sameContent` 改用原始 `for` 循环比较字节，消除 `(0 until count).all` 迭代装箱。
 - **无调用方兼容层 / 死代码**：
-  - `network/features/CommunitySyncManager.kt:22-79`、`network/features/ChangeFavorite.kt:12-16`（`changeFavorites`）、`network/features/GetCommunity.kt:483-484`（`getGuestbookComments`）、`network/features/IsAuthorized.kt:152`（`isAuthorized`）、`domain/reader/ReaderSessionController.kt`、`data/repository/ReaderDomainAdapters.kt`。
+  - ✅ 已删除全仓零引用的 `network/features/CommunitySyncManager.kt`、`domain/reader/ReaderSessionController.kt`、`data/repository/ReaderDomainAdapters.kt`、`domain/reader/ReaderRepositories.kt`（及 `ReaderModels.kt` 中仅被其引用的 `ReadingProgress`/`ReaderBookmark`/`ReaderSettingsState`），以及 `ChangeFavorite.kt` 中的 `changeFavorites`、`GetCommunity.kt` 中的 `getGuestbookComments`、`IsAuthorized.kt` 中的 `isAuthorized`。
 
 ---
 

@@ -37,46 +37,18 @@ fun EsjzoneClient.checkAuthorization(
         return AuthorizationCheckResult.AUTHORIZED
     }
 
-    val deadlineNanos = System.nanoTime() + totalTimeoutMillis.coerceAtLeast(1L) * 1_000_000L
-    val firstTimeout = remainingTimeoutMillis(deadlineNanos)
-    val first = if (firstTimeout > 0L) {
-        checkAuthorizationOnce(authorization, firstTimeout)
-    } else {
-        AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-    }
-    if (!first.retryableStatus) {
-        if (first.result == AuthorizationCheckResult.AUTHORIZED) {
-            markAuthorizationVerified(authorization)
-        }
-        return first.result
-    }
-
-    // A retryable 403 can be produced by a proxy, rate limiter, or a transient
-    // server edge. Confirm it before treating the persisted session as expired.
-    val secondTimeout = remainingTimeoutMillis(deadlineNanos)
-    val second = if (secondTimeout > 0L) {
-        checkAuthorizationOnce(authorization, secondTimeout)
-    } else {
-        AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-    }
-    // A repeated WAF/proxy response is still not proof that the session expired.
-    // Only an explicit unauthorized result may surface the relogin prompt.
-    val result = if (second.retryableStatus) AuthorizationCheckResult.UNKNOWN else second.result
+    val timeoutMillis = totalTimeoutMillis.coerceAtLeast(1L)
+    val result = checkAuthorizationOnce(authorization, timeoutMillis)
     if (result == AuthorizationCheckResult.AUTHORIZED) {
         markAuthorizationVerified(authorization)
     }
     return result
 }
 
-private data class AuthorizationProbe(
-    val result: AuthorizationCheckResult,
-    val retryableStatus: Boolean = false
-)
-
 private fun EsjzoneClient.checkAuthorizationOnce(
     authorization: Authorization,
     timeoutMillis: Long
-): AuthorizationProbe {
+): AuthorizationCheckResult {
     return try {
         val sessionBase = EsjzoneUrls.baseForDomain(
             authorization.domain.ifBlank { EsjzoneUrls.BaseWithoutProtocol }
@@ -97,57 +69,38 @@ private fun EsjzoneClient.checkAuthorizationOnce(
         val finalPath = response.request.url.encodedPath.lowercase()
         val responseBody = response.bodyStringOrEmpty()
 
-        val document = Jsoup.parse(responseBody)
-        val profileMarkerPresent = hasProfileMarker(document)
         val redirectedToLogin = finalPath.contains("/my/login") ||
             PageResponsePolicy.hasScriptLoginRedirect(responseBody)
-        val hasLoginForm = document.select("form.login-box").isNotEmpty() ||
-            (document.select("input[name=pwd]").isNotEmpty() &&
-                responseBody.contains("/my/login", ignoreCase = true))
-        val explicitLoginPage = redirectedToLogin
 
         val result = when {
-            explicitLoginPage ->
-                AuthorizationProbe(AuthorizationCheckResult.UNAUTHORIZED)
-            hasLoginForm && !profileMarkerPresent ->
-                AuthorizationProbe(AuthorizationCheckResult.UNAUTHORIZED)
-            responseCode == 401 ->
-                AuthorizationProbe(AuthorizationCheckResult.UNAUTHORIZED)
-            responseCode == 403 &&
-                !PageResponsePolicy.looksLikeBlockedOrLoginPage(responseBody, finalPath) ->
-                // A plain 403 can be a genuine authorization rejection, but a WAF/IP
-                // response must never erase a usable local session. Keep it unknown and
-                // let the next foreground/retry request decide.
-                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN, retryableStatus = true)
-            responseCode == 403 ->
-                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-            !isSuccessful ->
-                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-            responseBody.isBlank() ||
-                PageResponsePolicy.looksLikeBlockedOrLoginPage(responseBody, finalPath) ->
-                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
-            profileMarkerPresent ->
-                AuthorizationProbe(AuthorizationCheckResult.AUTHORIZED)
-            else ->
-                AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
+            redirectedToLogin -> AuthorizationCheckResult.UNAUTHORIZED
+            responseCode == 401 -> AuthorizationCheckResult.UNAUTHORIZED
+            responseCode == 403 || !isSuccessful || responseBody.isBlank() ->
+                // A 403/non-2xx/blank response may come from a WAF, proxy, or transient
+                // edge failure and must never erase a usable local session.
+                AuthorizationCheckResult.UNKNOWN
+            else -> {
+                val document = Jsoup.parse(responseBody)
+                val profileMarkerPresent = hasProfileMarker(document)
+                val hasLoginForm = document.select("form.login-box").isNotEmpty() ||
+                    (document.select("input[name=pwd]").isNotEmpty() &&
+                        responseBody.contains("/my/login", ignoreCase = true))
+                when {
+                    hasLoginForm && !profileMarkerPresent -> AuthorizationCheckResult.UNAUTHORIZED
+                    PageResponsePolicy.looksLikeBlockedOrLoginPage(responseBody, finalPath) ->
+                        AuthorizationCheckResult.UNKNOWN
+                    profileMarkerPresent -> AuthorizationCheckResult.AUTHORIZED
+                    else -> AuthorizationCheckResult.UNKNOWN
+                }
+            }
         }
 
-        AppLogger.i("IsAuthorized", "Authorization check result: ${result.result}")
+        AppLogger.i("IsAuthorized", "Authorization check result: $result")
         result
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         AppLogger.e("IsAuthorized", "Failed to check authorization due to network/parsing exception", e)
-        AuthorizationProbe(AuthorizationCheckResult.UNKNOWN)
+        AuthorizationCheckResult.UNKNOWN
     }
 }
-
-private fun remainingTimeoutMillis(deadlineNanos: Long): Long {
-    return ((deadlineNanos - System.nanoTime()) / 1_000_000L).coerceAtLeast(0L)
-}
-
-/**
- * Compatibility helper for callers that only need a strict boolean result.
- */
-fun EsjzoneClient.isAuthorized(authorization: Authorization): Boolean =
-    checkAuthorization(authorization) == AuthorizationCheckResult.AUTHORIZED

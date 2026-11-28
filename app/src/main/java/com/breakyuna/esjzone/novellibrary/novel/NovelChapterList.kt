@@ -28,29 +28,13 @@ data class NovelChapterList(
     init {
         var hasHistory = false
         var toRead: Chapter? = null
-        for (item in items) {
-            if (item is ChapterItem) {
-                val readable = !item.chapter.isExternal
-                if (toRead == null && readable)
-                    toRead = item.chapter
-                if (item.chapter.isHistory && readable) {
-                    if (toRead?.isHistory != true)
-                        toRead = item.chapter
-                    hasHistory = true
-                    break
-                }
-            } else if (item is ChapterListItem) {
-                for (chapter in item.chapters) {
-                    val readable = !chapter.isExternal
-                    if (toRead == null && readable)
-                        toRead = chapter
-                    if (chapter.isHistory && readable) {
-                        if (toRead?.isHistory != true)
-                            toRead = chapter
-                        hasHistory = true
-                        break
-                    }
-                }
+        for (chapter in orderedChapters) {
+            if (chapter.isExternal) continue
+            if (toRead == null) toRead = chapter
+            if (chapter.isHistory) {
+                toRead = chapter
+                hasHistory = true
+                break
             }
         }
         this.hasHistory = hasHistory

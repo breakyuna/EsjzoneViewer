@@ -18,6 +18,7 @@ private val PROFILE_EXPERIENCE_PATTERN = Regex(
 private val PROFILE_LEVEL_PATTERN = Regex(
     "(?i)([A-Za-z]{1,4}\\s*[級级]\\s*(?:Lv\\.?\\s*\\d+|Max))"
 )
+private val PROFILE_WHITESPACE_PATTERN = Regex("\\s+")
 
 /**
  * The account card currently renders the value as `7264 exp`. Keep the
@@ -27,6 +28,7 @@ private val PROFILE_LEVEL_PATTERN = Regex(
  */
 private fun profileCardText(document: Document): Sequence<String> = sequence {
     document.select("aside, .user-info, .profile-card, .profile-summary, [data-profile-card]")
+        .asSequence()
         .map { it.text() }
         .filter { it.isNotBlank() }
         .forEach { yield(it) }
@@ -68,7 +70,7 @@ internal fun profileLevel(document: Document): String? =
         ?.takeIf(String::isNotBlank)
         ?: profileCardText(document)
         .mapNotNull { PROFILE_LEVEL_PATTERN.find(it)?.groupValues?.getOrNull(1) }
-        .map { it.replace(Regex("\\s+"), " ").trim() }
+        .map { it.replace(PROFILE_WHITESPACE_PATTERN, " ").trim() }
         .firstOrNull()
 
 private val PROFILE_REGISTER_DATE_PREFIX = Regex("^\\s*(?:註冊|注册)日期\\s*[：:]?\\s*")

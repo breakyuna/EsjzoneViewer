@@ -17,6 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -36,9 +37,7 @@ internal class ReaderBackgroundPageModel(context: Context) :
         val saved: Boolean = false,
         val error: Int? = null
     ) {
-        val canApply: Boolean get() = source != null && preview != null &&
-            previewBlur == draft.blur && previewSize == requestedSize &&
-            !loading && !previewBusy && !saving
+        val canApply: Boolean get() = source != null && !loading && !saving
     }
 
     private val appContext = context.applicationContext
@@ -55,9 +54,12 @@ internal class ReaderBackgroundPageModel(context: Context) :
 
     private val initialLoad = viewModelScope.launch {
         try {
-            val saved = PresentationAccess.readerSettings.readImageBackground()
-            val source = withContext(Dispatchers.IO) {
-                ReaderImageBackgroundStore.file(appContext, saved)?.takeIf { it.isFile }
+            val (saved, source) = withContext(Dispatchers.IO) {
+                ReaderImageBackgroundStore.savedPhotoMutex.withLock {
+                    val current = PresentationAccess.readerSettings.readImageBackground()
+                    val file = ReaderImageBackgroundStore.file(appContext, current)?.takeIf { it.isFile }
+                    current to file
+                }
             }
             mutableState.value = State(source = source, draft = saved, loading = false, requestedSize = previewMaxSize)
             refreshPreview()
@@ -100,7 +102,7 @@ internal class ReaderBackgroundPageModel(context: Context) :
         if (state.value.loading || state.value.saving) return
         val previousBlur = state.value.draft.blur
         mutableState.value = state.value.copy(draft = value.sanitized())
-        if (previousBlur != state.value.draft.blur) refreshPreview()
+        if (previousBlur != state.value.draft.blur) refreshPreview(debounceMillis = BLUR_DEBOUNCE_MILLIS)
     }
 
     fun panPreview(delta: Offset, viewport: IntSize) {
@@ -111,14 +113,18 @@ internal class ReaderBackgroundPageModel(context: Context) :
         mutableState.value = current.copy(draft = draft)
     }
 
-    private fun refreshPreview() {
+    private fun refreshPreview(debounceMillis: Long = 0L) {
         previewJob?.cancel()
         val source = state.value.source ?: return
         val blur = state.value.draft.blur
         val size = previewMaxSize
-        mutableState.value = state.value.copy(previewBusy = true, requestedSize = size, previewBlur = null)
+        mutableState.value = state.value.copy(requestedSize = size, previewBusy = debounceMillis == 0L)
         previewJob = viewModelScope.launch {
             try {
+                if (debounceMillis > 0L) {
+                    delay(debounceMillis)
+                    mutableState.value = state.value.copy(previewBusy = true)
+                }
                 val bitmap = ReaderImageBackgroundStore.renderAppearance(source, blur, size)
                 mutableState.value = state.value.copy(preview = bitmap, previewBlur = blur, previewSize = size, previewBusy = false)
             } catch (error: CancellationException) {
@@ -133,7 +139,8 @@ internal class ReaderBackgroundPageModel(context: Context) :
     fun apply() {
         val selected = state.value
         if (!selected.canApply) return
-        mutableState.value = selected.copy(saving = true, error = null)
+        previewJob?.cancel()
+        mutableState.value = selected.copy(previewBusy = false, saving = true, error = null)
         saveJob = viewModelScope.launch {
             try {
                 withContext(NonCancellable + Dispatchers.IO) {
@@ -174,4 +181,8 @@ internal class ReaderBackgroundPageModel(context: Context) :
     }
 
     fun dismissError() { mutableState.value = state.value.copy(error = null) }
+
+    private companion object {
+        const val BLUR_DEBOUNCE_MILLIS = 120L
+    }
 }

@@ -355,7 +355,9 @@ class StorageFile private constructor(
                     if (read < 0) return@secondUse false
                     offset += read
                 }
-                if (!(0 until count).all { a[it] == b[it] }) return@secondUse false
+                for (i in 0 until count) {
+                    if (a[i] != b[i]) return@secondUse false
+                }
             }
             @Suppress("UNREACHABLE_CODE") false
         } }

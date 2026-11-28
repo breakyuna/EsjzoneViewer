@@ -61,7 +61,7 @@ internal fun selectHomeSectionCards(
     }
 
     return roots
-        .flatMap { root -> selector.select(root, ".card.mb-30, .card") }
+        .flatMap { root -> selector.select(root, ".card") }
         .distinct()
         .filter { card ->
             selector.select(card, "h5.card-title a[href], h5 a[href*='/detail/']").isNotEmpty()

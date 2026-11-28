@@ -113,19 +113,32 @@ data class ReaderAnchor(
         private const val QUOTE_LENGTH = 32
         private const val SHORT_QUOTE_LENGTH = 12
         private const val PREFIX_LENGTH = 16
+        private val FINGERPRINT_PATTERN = Regex("[0-9a-f]{64}")
+        private val VALID_KINDS = setOf("heading", "text", "image", "end")
         private val gson = Gson()
         fun encode(anchor: ReaderAnchor?): String? = anchor?.let(gson::toJson)
-        fun decode(value: String?): ReaderAnchor? = runCatching {
-            if (value == null) return@runCatching null
-            requireNotNull(gson.fromJson(value, ReaderAnchor::class.java)).also {
-                require(it.version == 1 && it.chapterKey.isNotBlank() && it.fingerprint.matches(Regex("[0-9a-f]{64}")))
-                require(it.blockIndex >= -1 && it.offset >= 0 && it.fraction.isFinite() && it.fraction in 0f..1f)
-                require(it.kind in setOf("heading", "text", "image", "end"))
-                require(it.kind != "heading" || it.blockIndex == -1)
-                require(it.kind in setOf("heading", "end") || it.blockIndex >= 0)
-                require(it.normalizedOffset == null || (it.normalizedOffset.isFinite() && it.normalizedOffset in 0f..1f))
+        fun decode(value: String?): ReaderAnchor? {
+            if (value.isNullOrBlank()) return null
+            val anchor = runCatching { gson.fromJson(value, ReaderAnchor::class.java) }.getOrNull()
+                ?: return null
+            val chapterKey: String? = anchor.chapterKey
+            val fingerprint: String? = anchor.fingerprint
+            val kind: String? = anchor.kind
+            if (anchor.version != 1 || chapterKey.isNullOrBlank() ||
+                fingerprint == null || !FINGERPRINT_PATTERN.matches(fingerprint)) {
+                return null
             }
-        }.getOrNull()
+            if (anchor.blockIndex < -1 || anchor.offset < 0 ||
+                !anchor.fraction.isFinite() || anchor.fraction !in 0f..1f) {
+                return null
+            }
+            if (kind == null || kind !in VALID_KINDS) return null
+            if (kind == "heading" && anchor.blockIndex != -1) return null
+            if (kind != "heading" && kind != "end" && anchor.blockIndex < 0) return null
+            val normalized = anchor.normalizedOffset
+            if (normalized != null && (!normalized.isFinite() || normalized !in 0f..1f)) return null
+            return anchor
+        }
 
         private fun findQuotePositions(haystack: String, needle: String): List<Int> = buildList {
             var from = 0

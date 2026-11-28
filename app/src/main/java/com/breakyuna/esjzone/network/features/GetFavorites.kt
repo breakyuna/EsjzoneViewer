@@ -40,7 +40,7 @@ fun EsjzoneClient.getAllFavorites(
     val (_, novels) = ListPageCache.open(
         authorization, firstPageUrl, pageUrl = { favoritePageUrl(sort, it, authorization.domain) },
         maxAgeMillis = PageCacheTtl.ACCOUNT_LIST, kind = PageKind.ACCOUNT,
-        forceRefresh = forceRefresh, allowFallback = false, complete = true, networkAttempts = 3
+        forceRefresh = forceRefresh, allowFallback = false, complete = true, networkAttempts = 2
     ) { html, _ -> parseFavoritePage(html, firstPageUrl, complete = true) }
     return novels.distinctBy { EsjzoneUrls.canonicalPageKey(it.url).ifBlank { it.url.trim() } }
 }

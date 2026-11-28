@@ -898,6 +898,7 @@ object NovelDownloadStore {
             val root: StorageFile
             val revision: Long
             val cached: List<DownloadedNovelSummary>?
+            val metadataCache: List<DownloadedNovelSummary>?
             val dirty: Set<String>
             val directories: Map<String, StorageFile>
             synchronized(ioLock) {
@@ -906,6 +907,7 @@ object NovelDownloadStore {
                 directories = novelDirectories.filterValues { it.absolutePath !in deletingDirectories }
                 revision = mutableChanges.value
                 cached = inventorySnapshot
+                metadataCache = if (cached == null) metadataSnapshot else null
                 dirty = dirtyInventorySizes.toSet()
             }
             if (cached != null && dirty.isEmpty()) return cached
@@ -921,10 +923,13 @@ object NovelDownloadStore {
                     }
                 }
             } else {
+                val metadataByKey = metadataCache?.associateBy { canonicalKey(it.novelUrl) }
                 val rootEntries = mutableMapOf<StorageFile, List<StorageFile.Entry>>()
-                val metadata = directories.values.mapNotNull { directory ->
+                val metadata = directories.entries.mapNotNull { (key, directory) ->
                     checkActive()
-                    val stored = synchronized(ioLock) { readManifest(directory) } ?: return@mapNotNull null
+                    val stored = metadataByKey?.get(key)?.manifest
+                        ?: synchronized(ioLock) { readManifest(directory) }
+                        ?: return@mapNotNull null
                     val entries = directory.entries()
                     rootEntries[directory] = entries
                     val files = entries.filter { !it.directory }.mapTo(HashSet()) { it.file.name }

@@ -41,6 +41,8 @@ internal suspend fun copyBookmarkCover(target: File, write: (File) -> Unit): Boo
  */
 object BookmarkCoverStore {
     private const val DIRECTORY_NAME = "bookmark_covers"
+    private val NON_SAFE_ID_CHAR = Regex("[^a-zA-Z0-9_-]")
+    private val DETAIL_ID_PATTERN = Regex("/detail/([^/]+?)(?:\\.html)?/?$")
 
     private val directory: File
         get() = File(EsjzoneApplication.instance.filesDir, DIRECTORY_NAME).apply {
@@ -50,17 +52,17 @@ object BookmarkCoverStore {
     fun cleanNovelId(rawNovelId: String, chapterUrl: String = ""): String {
         val id = rawNovelId.trim()
         if (id.isNotBlank() && !id.startsWith("/") && !id.startsWith("http")) {
-            return id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            return id.replace(NON_SAFE_ID_CHAR, "_")
         }
         if (chapterUrl.isNotBlank()) {
             val fromChapter = Chapter("", chapterUrl, false).novelId()
             if (fromChapter.isNotBlank()) return fromChapter
         }
         if (id.isNotBlank()) {
-            val match = Regex("/detail/([^/]+?)(?:\\.html)?/?$").find(id)
+            val match = DETAIL_ID_PATTERN.find(id)
             if (match != null) return match.groupValues[1]
         }
-        return id.replace(Regex("[^a-zA-Z0-9_-]"), "_").ifBlank { "unknown" }
+        return id.replace(NON_SAFE_ID_CHAR, "_").ifBlank { "unknown" }
     }
 
     fun coverFile(novelId: String, chapterUrl: String = ""): File {
@@ -186,6 +188,20 @@ object BookmarkCoverStore {
         null
     }
 
+    internal fun hasBookmarksForNovel(
+        refs: Iterable<com.breakyuna.esjzone.database.dao.BookmarkCoverRef>,
+        cleanId: String
+    ): Boolean = cleanId.isNotBlank() && cleanId != "unknown" &&
+        refs.any { cleanNovelId(it.novelId, it.chapterUrl) == cleanId }
+
+    internal fun deleteCover(cleanId: String) {
+        if (cleanId.isBlank() || cleanId == "unknown") return
+        val file = File(directory, "cover_$cleanId.jpg")
+        if (file.isFile) {
+            file.delete()
+        }
+    }
+
     /**
      * Cleans up the book's cover file when no bookmarks for this novel remain.
      */
@@ -194,16 +210,11 @@ object BookmarkCoverStore {
         if (cleanId.isBlank() || cleanId == "unknown") return@withContext
 
         val hasOtherBookmarks = runCatching {
-            PresentationAccess.database.bookmarkDao().getAll().any { bookmark ->
-                cleanNovelId(bookmark.novelId, bookmark.chapterUrl) == cleanId
-            }
+            hasBookmarksForNovel(PresentationAccess.database.bookmarkDao().coverRefs(), cleanId)
         }.getOrDefault(true)
 
         if (!hasOtherBookmarks) {
-            val file = coverFile(cleanId)
-            if (file.isFile) {
-                file.delete()
-            }
+            deleteCover(cleanId)
         }
     }
 }

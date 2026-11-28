@@ -44,10 +44,15 @@ data class Chapter(
     val isHistory: Boolean
 ) : Serializable {
 
+    @Transient
+    @Volatile
+    private var cachedSource: ChapterSource? = null
+
+    val source: ChapterSource
+        get() = cachedSource ?: resolveChapterSource(url).also { cachedSource = it }
+
     val isExternal: Boolean
         get() = source == ChapterSource.UNSUPPORTED_EXTERNAL
-
-    val source: ChapterSource get() = resolveChapterSource(url)
 
     fun novelId(): String {
         return URL_REGEX.find(this.url)?.groupValues?.getOrNull(1).orEmpty()

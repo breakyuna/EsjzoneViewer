@@ -495,9 +495,6 @@ private fun requestForumReplyAuthToken(client: okhttp3.OkHttpClient, pageUrl: St
         )
 }
 
-fun EsjzoneClient.getGuestbookComments(authorization: Authorization): List<Comment> =
-    getPageComments(authorization, EsjzoneUrls.Guestbook)
-
 fun EsjzoneClient.getForumCategories(
     authorization: Authorization,
     forceRefresh: Boolean = false

@@ -1,5 +1,6 @@
 package com.breakyuna.esjzone.database.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -9,6 +10,11 @@ import androidx.room.Transaction
 import com.breakyuna.esjzone.novellibrary.novel.validNovelTitle
 import com.breakyuna.esjzone.database.entity.Bookmark
 import kotlinx.coroutines.flow.Flow
+
+data class BookmarkCoverRef(
+    @ColumnInfo(name = "novel_id") val novelId: String,
+    @ColumnInfo(name = "chapter_url") val chapterUrl: String
+)
 
 @Dao
 interface BookmarkDao {
@@ -27,6 +33,17 @@ interface BookmarkDao {
 
     @Query("SELECT * FROM bookmarks WHERE chapter_url = :chapterUrl ORDER BY created_at DESC")
     fun forChapter(chapterUrl: String): List<Bookmark>
+
+    @Query("SELECT * FROM bookmarks WHERE chapter_url LIKE '%' || :baseChapterKey || '%' ORDER BY created_at DESC")
+    fun forChapterKeyRaw(baseChapterKey: String): List<Bookmark>
+
+    fun forChapterKey(chapterKey: String): List<Bookmark> {
+        val base = chapterKey.substringBefore('#').substringBefore('?')
+        return if (base.isBlank()) emptyList() else forChapterKeyRaw(base)
+    }
+
+    @Query("SELECT DISTINCT novel_id, chapter_url FROM bookmarks")
+    fun coverRefs(): List<BookmarkCoverRef>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertRaw(bookmark: Bookmark)

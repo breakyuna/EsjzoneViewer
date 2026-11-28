@@ -1059,7 +1059,10 @@ class ChapterPage(
                             readerLegacyUnderlineRenderings(it, names)
                         }
                     }
-                    if (migrate(rows) == rows) null else key to migrate
+                    val migrated = migrate(rows)
+                    if (migrated == rows) null else key to { current: List<ReaderUnderline> ->
+                        if (current == rows) migrated else migrate(current)
+                    }
                 }
             }
             pending.forEach { (key, migrate) -> underlineModel.migrate(key, migrate) }
@@ -1428,7 +1431,7 @@ class ChapterPage(
                         val database = PresentationAccess.database
                         val added = database.withTransaction {
                             val dao = database.bookmarkDao()
-                            val matches = dao.getAll().filter { row ->
+                            val matches = dao.forChapterKey(targetKey).filter { row ->
                                 bookmarkChapterIdentity(row) == targetKey &&
                                     com.breakyuna.esjzone.ui.reader.ReaderBookmarkMarker.paragraph(document,
                                         targetKey, ReaderAnchor.decode(row.anchor)) == paragraph
@@ -1459,16 +1462,17 @@ class ChapterPage(
                         bookmarkCoverMutex.withLock {
                             try {
                                 // Re-read committed state: several rapid toggles may already be saved.
-                                val hasBookmarks = PresentationAccess.database.bookmarkDao().getAll().any {
-                                    com.breakyuna.esjzone.database.BookmarkCoverStore.cleanNovelId(it.novelId, it.chapterUrl) ==
-                                        com.breakyuna.esjzone.database.BookmarkCoverStore.cleanNovelId(finalNovelId, targetKey)
-                                }
+                                val cleanId = com.breakyuna.esjzone.database.BookmarkCoverStore.cleanNovelId(finalNovelId, targetKey)
+                                val hasBookmarks = com.breakyuna.esjzone.database.BookmarkCoverStore.hasBookmarksForNovel(
+                                    PresentationAccess.database.bookmarkDao().coverRefs(),
+                                    cleanId
+                                )
                                 if (hasBookmarks) {
                                     com.breakyuna.esjzone.database.BookmarkCoverStore.saveCoverFromCacheOrDownload(
                                         novelId = finalNovelId, coverUrl = coverSource,
                                         novelUrl = currentNovelUrl, chapterUrl = targetKey)
                                 } else {
-                                    com.breakyuna.esjzone.database.BookmarkCoverStore.cleanupIfUnused(finalNovelId, targetKey)
+                                    com.breakyuna.esjzone.database.BookmarkCoverStore.deleteCover(cleanId)
                                 }
                             } catch (error: CancellationException) {
                                 throw error

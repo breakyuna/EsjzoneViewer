@@ -163,18 +163,15 @@ internal class UnderlinesPageModel : AppStateViewModel<UnderlinesPageModel.State
                     database.localReadingActivityDao().observeAll()) { marks, bookmarks, history ->
                     Triple(marks, bookmarks, history)
                 }.collectLatest { (cached, bookmarks, history) ->
-                    var unreadable = false
                     val marks = cached.associate { row ->
                         row.key.removePrefix(ReaderUnderlines.KEY_PREFIX) to runCatching {
                             ReaderUnderlines.decode(row.value)
                         }.getOrElse { error ->
-                            unreadable = true
                             AppLogger.w("UnderlinesPage", "Could not read a saved underline", error)
                             emptyList()
                         }
                     }
                     if (marks.values.all { it.isEmpty() }) {
-                        check(!unreadable) { "Could not read stored underlines" }
                         mutableState.value = State.Result(emptyList())
                         return@collectLatest
                     }

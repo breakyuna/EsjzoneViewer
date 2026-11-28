@@ -178,6 +178,7 @@ class FavoritePageModel(private val authorization: Authorization) :
                 activities = PresentationAccess.database.localReadingActivityDao().observeAll(),
                 downloadChanges = PresentationAccess.downloads.changes,
                 storageWorkAllowed = com.breakyuna.esjzone.app.ReaderStartupWork.allowed,
+                progressVersionFor = PresentationAccess.downloads::progressVersionFor,
                 refreshProgress = { rows ->
                     rows.map {
                         kotlinx.coroutines.currentCoroutineContext().ensureActive()

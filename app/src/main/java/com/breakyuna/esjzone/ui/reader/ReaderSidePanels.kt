@@ -149,14 +149,15 @@ internal fun ReaderSidePanels(
                     val wasOpen = state.isOpen
                     val startFraction = state.fraction
                     val existingPanel = state.panel
-                    var axis: ReaderDragAxis? = null
-                    var draggingPanel: ReaderSidePanel? = null
                     // Horizontal gestures inside the open contents panel belong to its tabs.
                     var rejected = down.isConsumed || (!gesturesEnabled && existingPanel == null) ||
                         (wasOpen && existingPanel == ReaderSidePanel.CONTENTS && start.x <= state.contentsWidth)
+                    if (rejected) return@awaitEachGesture
+                    var axis: ReaderDragAxis? = null
+                    var draggingPanel: ReaderSidePanel? = null
                     var released = false
                     var dx = 0f
-                    val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, start) }
+                    var velocity: VelocityTracker? = null
                     try {
                         do {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -164,26 +165,34 @@ internal fun ReaderSidePanels(
                             if (event.changes.size > 1 || change.isConsumed) rejected = true
                             dx = change.position.x - start.x
                             val dy = change.position.y - start.y
-                            velocity.addPosition(change.uptimeMillis, change.position)
                             if (!rejected && axis == null) {
                                 if (change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
                                     rejected = true
                                 } else {
                                     axis = readerDragAxis(dx, dy, viewConfiguration.touchSlop)
-                                    if (axis == ReaderDragAxis.HORIZONTAL && change.pressed) {
+                                    if (axis == ReaderDragAxis.VERTICAL) {
+                                        rejected = true
+                                    } else if (axis == ReaderDragAxis.HORIZONTAL && change.pressed) {
                                         val target = existingPanel ?: if (dx > 0f) ReaderSidePanel.CONTENTS else ReaderSidePanel.COMMENTS
                                         if (target == ReaderSidePanel.COMMENTS && !commentsEnabled && existingPanel == null) {
                                             rejected = true
                                         } else {
                                             draggingPanel = target
+                                            velocity = VelocityTracker().apply {
+                                                addPosition(down.uptimeMillis, start)
+                                                addPosition(change.uptimeMillis, change.position)
+                                            }
                                             if (existingPanel == null) currentOnOpening(target)
                                             state.beginDrag(target)
                                         }
                                     }
                                 }
+                            } else if (draggingPanel != null && !rejected) {
+                                velocity?.addPosition(change.uptimeMillis, change.position)
                             }
+                            if (rejected) break
                             val panel = draggingPanel
-                            if (panel != null && !rejected) {
+                            if (panel != null) {
                                 change.consume()
                                 val movement = dx - sign(dx) * minOf(abs(dx), viewConfiguration.touchSlop)
                                 state.dragTo(startFraction + movement * panel.openingSign / state.width(panel))
@@ -192,6 +201,7 @@ internal fun ReaderSidePanels(
                             val finalEvent = awaitPointerEvent(PointerEventPass.Final)
                             if (draggingPanel == null && finalEvent.changes.firstOrNull { it.id == down.id }?.isConsumed == true) {
                                 rejected = true
+                                break
                             }
                         } while (event.changes.any { it.pressed })
                         draggingPanel?.let { panel ->
@@ -199,7 +209,7 @@ internal fun ReaderSidePanels(
                                 fraction = state.fraction,
                                 wasOpen = wasOpen,
                                 travelDp = dx / density.density,
-                                openingVelocityDp = velocity.calculateVelocity().x * panel.openingSign / density.density
+                                openingVelocityDp = (velocity?.calculateVelocity()?.x ?: 0f) * panel.openingSign / density.density
                             ) else wasOpen
                             state.settle(open)
                             draggingPanel = null

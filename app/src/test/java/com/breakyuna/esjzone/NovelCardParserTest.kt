@@ -128,6 +128,64 @@ class NovelCardParserTest {
         assertEquals(1, pageCount(fixture("list.html")))
     }
 
+    @Test
+    fun homeSections_preferExplicitMarkersOverConflictingPositionalLayout() {
+        val document = Jsoup.parse(
+            """
+            <html><body>
+              <div></div><div></div>
+              <div><section><div><div>
+                <div></div><div></div>
+                <div id="recent-translated-r18">
+                  <div class="card mb-30">
+                    <h5 class="card-title"><a href="/detail/2001.html">R18 Without Badge</a></h5>
+                  </div>
+                </div>
+                <div></div>
+                <div></div>
+                <div></div>
+                <div id="recent-translated">
+                  <div class="card mb-30">
+                    <h5 class="card-title"><a href="/detail/1001.html">Safe Translated</a></h5>
+                  </div>
+                </div>
+              </div></div></section></div>
+            </body></html>
+            """.trimIndent(),
+            "https://www.esjzone.cc/"
+        )
+        val safeCards = selectHomeSectionCards(document, HomeSection.TRANSLATED)
+        assertEquals(1, safeCards.size)
+        assertEquals("Safe Translated", parseNovelCard(safeCards.single(), false, NovelCardLayout.HOME).name)
+
+        val r18Cards = selectHomeSectionCards(document, HomeSection.TRANSLATED_R18)
+        assertEquals(1, r18Cards.size)
+        assertEquals("R18 Without Badge", parseNovelCard(r18Cards.single(), true, NovelCardLayout.HOME).name)
+    }
+
+    @Test
+    fun homeSections_fallbackToPositionalLayoutWhenMarkersAbsent() {
+        val document = Jsoup.parse(
+            """
+            <html><body>
+              <div></div><div></div>
+              <div><section><div><div>
+                <div></div><div></div>
+                <div>
+                  <div class="card mb-30">
+                    <h5 class="card-title"><a href="/detail/1001.html">Positional Translated</a></h5>
+                  </div>
+                </div>
+              </div></div></section></div>
+            </body></html>
+            """.trimIndent(),
+            "https://www.esjzone.cc/"
+        )
+        val cards = selectHomeSectionCards(document, HomeSection.TRANSLATED)
+        assertEquals(1, cards.size)
+        assertEquals("Positional Translated", parseNovelCard(cards.single(), false, NovelCardLayout.HOME).name)
+    }
+
     private fun fixture(name: String): Document =
         Jsoup.parse(
             requireNotNull(javaClass.getResource("/esj/$name")) {

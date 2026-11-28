@@ -81,7 +81,6 @@ object ReaderBackgroundPage : AppDestination {
             }
         }
         LaunchedEffect(state.saved) { if (state.saved) navigator.pop() }
-        BackHandler(state.saving) { }
         var fullScreen by rememberSaveable { mutableStateOf(false) }
         BackHandler(fullScreen) { fullScreen = false }
         LaunchedEffect(fullScreen) { model.setFullScreen(fullScreen) }
@@ -161,7 +160,7 @@ object ReaderBackgroundPage : AppDestination {
                 topBar = {
                     TopAppBar(
                         title = { Text(stringResource(R.string.reader_background_image), style = AppTypography.titleMedium) },
-                        navigationIcon = { BackIconButton { if (!state.saving) navigator.pop() } },
+                        navigationIcon = { BackIconButton { navigator.pop() } },
                         actions = {
                             TextButton(onClick = model::apply, enabled = state.canApply) {
                                 Text(stringResource(R.string.reader_background_apply))

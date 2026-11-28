@@ -155,8 +155,8 @@ object DownloadPage : AppDestination {
         val downloadChanges by PresentationAccess.downloads.changes.collectAsStateWithLifecycle()
         val entries = (state as? DownloadPageModel.State.Content)?.novels.orEmpty().filter { adult || !it.manifest.isAdult }
         val deleting = (state as? DownloadPageModel.State.Content)?.deleting == true
-        LaunchedEffect(activeLocation, titleChanges, downloadChanges, deleting) {
-            if (!deleting) model.refresh()
+        LaunchedEffect(activeLocation, titleChanges, downloadChanges) {
+            model.refresh()
         }
         LaunchedEffect(entries) { selected = selected.intersect(entries.mapTo(LinkedHashSet()) { it.novelUrl }) }
         BackHandler(enabled = editing && !showDelete) {
@@ -426,9 +426,12 @@ private class DownloadPageModel : AppStateViewModel<DownloadPageModel.State>(Sta
                     delay(500)
                     val novels = runInterruptible {
                         PresentationAccess.downloads.listDownloadedNovels(
-                            onMetadata = {
+                            onMetadata = { rows ->
                                 context.ensureActive()
-                                publish(generation, State.Content(it))
+                                publish(generation, State.Content(rows.map { row ->
+                                    if (row.storageBytes >= 0) row
+                                    else previous[row.novelUrl]?.takeIf { it.manifest == row.manifest } ?: row
+                                }))
                             },
                             checkActive = { context.ensureActive() }
                         )

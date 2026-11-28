@@ -202,7 +202,7 @@ object FavoritePage : AppDestination {
             BookshelfCoverStore.schedulePersist(entries)
         }
         val readingSnapshot by model.readingIndex.collectAsStateWithLifecycle()
-        val loadingShelf = shelfEntries == null || readingSnapshot == null
+        val loadingShelf = shelfEntries == null
         var showShelfSkeleton by remember { mutableStateOf(false) }
         LaunchedEffect(loadingShelf) {
             if (loadingShelf) {

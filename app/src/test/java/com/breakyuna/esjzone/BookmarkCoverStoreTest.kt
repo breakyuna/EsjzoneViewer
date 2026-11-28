@@ -2,6 +2,7 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.database.BookmarkCoverStore
 import com.breakyuna.esjzone.database.copyBookmarkCover
+import com.breakyuna.esjzone.database.dao.BookmarkCoverRef
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
@@ -12,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,5 +63,17 @@ class BookmarkCoverStoreTest {
         assertEquals("1642059588", chapter1)
         assertEquals(chapter1, chapter5)
         assertEquals(chapter1, chapterDetail)
+    }
+
+    @Test
+    fun hasBookmarksForNovel_matchesWhitespaceNovelIdAndWenku8ChapterUrl() {
+        val refs = listOf(
+            BookmarkCoverRef(novelId = " 9001 ", chapterUrl = "https://www.wenku8.net/novel/1/123/456.htm"),
+            BookmarkCoverRef(novelId = "", chapterUrl = "https://www.esjzone.cc/forum/9002/10.html")
+        )
+        assertTrue(BookmarkCoverStore.hasBookmarksForNovel(refs, "9001"))
+        assertTrue(BookmarkCoverStore.hasBookmarksForNovel(refs, "9002"))
+        assertFalse(BookmarkCoverStore.hasBookmarksForNovel(refs, "9003"))
+        assertFalse(BookmarkCoverStore.hasBookmarksForNovel(refs, "unknown"))
     }
 }

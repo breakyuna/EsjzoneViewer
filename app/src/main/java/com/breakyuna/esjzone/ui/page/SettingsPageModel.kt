@@ -7,14 +7,18 @@ import com.breakyuna.esjzone.ui.navigation.AppStateViewModel
 import com.breakyuna.esjzone.AppLanguage
 import com.breakyuna.esjzone.database.dao.put
 import com.breakyuna.esjzone.network.Authorization
-import com.breakyuna.esjzone.network.features.logout
+import com.breakyuna.esjzone.network.features.requestRemoteLogout
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class CacheOperation { PAGES, IMAGES }
 
@@ -182,44 +186,41 @@ class SettingsPageModel : AppStateViewModel<SettingsPageModel.State>(State()) {
             logoutInProgress = true, logoutCompleted = false, logoutFailed = false
         ) }
         viewModelScope.launch(Dispatchers.IO) {
-            var cancelled = false
             var completed = false
             try {
-                com.breakyuna.esjzone.network.features.HistoryDataCache.clearSnapshot(authorization)
-                try {
-                    PresentationAccess.settings.DOMAINS.forEach { domain ->
-                        val session = PresentationAccess.client.restoreAuthorization(domain)
+                // Once confirmed, finish remote logout and local cleanup even if the user leaves settings.
+                withContext(NonCancellable) {
+                    com.breakyuna.esjzone.network.features.HistoryDataCache.clearSnapshot(authorization)
+                    val sessions = PresentationAccess.settings.DOMAINS.mapNotNull { domain ->
+                        PresentationAccess.client.restoreAuthorization(domain)
                             ?.takeIf { PresentationAccess.client.hasSiteSession(domain) }
-                        if (session != null) PresentationAccess.client.logout(session)
                     }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    AppLogger.w("SettingsPageModel", "Server logout failed; clearing local session", e)
+                    coroutineScope {
+                        sessions.map { session ->
+                            launch { PresentationAccess.client.requestRemoteLogout(session) }
+                        }.joinAll()
+                    }
+                    PresentationAccess.client.clearSession()
+                    val dao = PresentationAccess.database.cacheDao()
+                    dao.deleteByKey("ews_key")
+                    dao.deleteByKey("ews_token")
+                    dao.deleteByKey("session_domain")
+                    dao.getAll()
+                        .filter { it.key.startsWith("profile:") }
+                        .forEach { dao.delete(it) }
+                    com.breakyuna.esjzone.network.features.HistoryDataCache.clearMemory()
+                    completed = true
                 }
-                PresentationAccess.client.clearSession()
-                val dao = PresentationAccess.database.cacheDao()
-                dao.deleteByKey("ews_key")
-                dao.deleteByKey("ews_token")
-                dao.deleteByKey("session_domain")
-                dao.getAll()
-                    .filter { it.key.startsWith("profile:") }
-                    .forEach { dao.delete(it) }
-                com.breakyuna.esjzone.network.features.HistoryDataCache.clearMemory()
-                completed = true
             } catch (e: CancellationException) {
-                cancelled = true
                 throw e
             } catch (e: Exception) {
                 AppLogger.e("SettingsPageModel", "Failed to clear local session", e)
             } finally {
-                if (!cancelled) {
-                    mutableState.update { it.copy(
-                        logoutInProgress = false,
-                        logoutCompleted = completed,
-                        logoutFailed = !completed
-                    ) }
-                }
+                mutableState.update { it.copy(
+                    logoutInProgress = false,
+                    logoutCompleted = completed,
+                    logoutFailed = !completed
+                ) }
             }
         }
     }

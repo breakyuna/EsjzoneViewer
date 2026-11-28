@@ -9,12 +9,6 @@ import com.breakyuna.esjzone.novellibrary.novel.Novel
 import okhttp3.Request
 import okhttp3.RequestBody
 
-fun EsjzoneClient.changeFavorites(authorization: Authorization, novel: Novel) {
-    runNetworkSafely("ChangeFavorite", Unit) {
-        toggleFavorite(authorization, novel)
-    }
-}
-
 /** Executes the site's toggle; only a confirmed business success completes a shelf intent. */
 fun EsjzoneClient.toggleFavorite(authorization: Authorization, novel: Novel): Boolean {
     return runNetworkSafely("ChangeFavorite", false) {
