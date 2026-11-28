@@ -70,24 +70,6 @@ private fun matchLinksToBlock(block: ReaderBlock, item: ComponentLinks): List<Re
     if (block !is ReaderBlock.Paragraph && block !is ReaderBlock.Text) return null
     val blockText = block.sourceText()
     if (blockText == item.text) return item.links
-    if (item.text.isNotEmpty()) {
-        val shift = blockText.indexOf(item.text)
-        if (shift >= 0) {
-            return item.links.map { it.copy(start = it.start + shift, end = it.end + shift) }
-        }
-    }
-    if (blockText.isNotBlank()) {
-        val shift = item.text.indexOf(blockText)
-        if (shift >= 0) {
-            val endBound = shift + blockText.length
-            val sliced = item.links.mapNotNull { link ->
-                val start = maxOf(link.start, shift) - shift
-                val end = minOf(link.end, endBound) - shift
-                if (start < end) ReaderLink(start, end, link.url) else null
-            }
-            if (sliced.isNotEmpty()) return sliced
-        }
-    }
     val normalizedBlock = blockText.filterNot(Char::isWhitespace)
     val normalizedItem = item.text.filterNot(Char::isWhitespace)
     if (normalizedBlock.isNotEmpty() && normalizedBlock == normalizedItem) {
