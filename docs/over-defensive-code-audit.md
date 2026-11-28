@@ -293,11 +293,11 @@
 
 ### 5.3 数据库、领域层与持久化
 
-12. **[✅ 已修复] 旧章节 `withFormatting` 命中无排版分支时不升级版本，导致每次打开重跑 Jsoup** — **性能：中**
+12. **[✅ 已修复] 结构化章节重复检查排版索引并解析旧排版** — **性能：中**
     - `data/reader/ChapterFormatting.kt:266-312`
     - **问题**：即便 `parserVersion >= 2` 仍每次缓存读取都重检全部对齐/分隔/折叠索引；且 L304 在无有效对齐/分隔或不匹配时直接 `return this` 而不递增 `parserVersion`，导致包含相关标记的旧快照每次打开都重跑 `Jsoup.parseBodyFragment` 与整章 `analyseChapterContent`。
-    - **建议**：已达当前 `parserVersion` 的快照跳过全量索引复验；处理完毕后持久化更新 `parserVersion` 防止反复解析。
-    - **整改落地**：`ChapterFormatting.withFormatting` 对已达 `CURRENT_PARSER_VERSION` 且布局字段非空的快照直接快返，并在无标记/确定性空布局/不匹配分支通过 `upgradedFormatting()` 升级版本号（Jsoup 异常时不升级）。
+    - **建议**：已达当前 `parserVersion` 的快照跳过全量索引复验，复用结构化缓存中旧排版的恢复结果。
+    - **整改落地**：`ChapterFormatting.withFormatting` 对已达 `CURRENT_PARSER_VERSION` 且布局字段非空的快照直接返回。旧 HTML 含排版标记且与正文匹配时才恢复有效排版。结构化页面缓存按正文和 HTML 复用恢复结果。
 
 13. **[✅ 已修复] 书架缩略图双编码（WebP + JPEG）并经历 3–4 个临时文件** — **性能：中**
     - `database/BookshelfCoverThumbnail.kt:14-53`

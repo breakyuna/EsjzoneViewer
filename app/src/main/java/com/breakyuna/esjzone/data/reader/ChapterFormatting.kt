@@ -283,16 +283,7 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
         }
         if (saved.parserVersion >= ReaderChapterFormatting.CURRENT_PARSER_VERSION || html.isNullOrBlank()) return this
     }
-    if (html.isNullOrBlank()) return this
-    fun upgradedFormatting(): ChapterBody {
-        val base = saved ?: ReaderChapterFormatting()
-        val upgraded = base.copy(
-            disclosureTitleParts = base.disclosureTitleParts.orEmpty(),
-            parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION
-        )
-        return if (saved == upgraded) this else copy(formatting = upgraded)
-    }
-    if (!html.hasChapterFormattingMarkup()) return upgradedFormatting()
+    if (html.isNullOrBlank() || !html.hasChapterFormattingMarkup()) return this
     val result = runCatching {
         val document = Jsoup.parseBodyFragment(html, baseUrl.orEmpty())
         val recovered = analyseChapterContent(document.body())
@@ -312,7 +303,7 @@ internal fun ChapterBody.withFormatting(html: String?, baseUrl: String?): Chapte
                 ReaderBlock.LineBreak -> actual == ReaderBlock.LineBreak
             }
         }
-        if (!matches || (layout.alignments.isEmpty() && layout.dividersAt.isEmpty())) return upgradedFormatting()
+        if (!matches || (layout.alignments.isEmpty() && layout.dividersAt.isEmpty())) return this
         val titles = layout.disclosureTitleParts.mapNotNull { (index, count) ->
             val title = (parsed[index] as ReaderBlock.Paragraph).parts.take(count).joinToString("") { it.value }
             stored[index].leadingTitleParts(title)?.let { index to it }
