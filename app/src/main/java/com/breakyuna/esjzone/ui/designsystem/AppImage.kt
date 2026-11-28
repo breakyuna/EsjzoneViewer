@@ -32,6 +32,7 @@ import com.breakyuna.esjzone.app.CoverLoadingPolicy
 import com.breakyuna.esjzone.app.LocalCoverPage
 import com.breakyuna.esjzone.app.PresentationAccess
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.external.isAllowedWenkuImageUrl
 import com.breakyuna.esjzone.novellibrary.novel.CoverFailure
 import com.breakyuna.esjzone.novellibrary.novel.CoverSource
 import com.breakyuna.esjzone.novellibrary.novel.CoverState
@@ -445,9 +446,8 @@ internal fun mirrorImageRequest(context: Context, model: Any?, allowNetwork: Boo
 @Composable
 internal fun readerImageLoader(model: Any?): ImageLoader {
     val url = model as? String
-    val parsed = remember(url) { url?.toHttpUrlOrNull() }
-    return if (parsed?.isHttps == true && parsed.host == "www.wenku8.net" &&
-        parsed.username.isEmpty() && parsed.password.isEmpty()) {
+    val isWenkuImage = remember(url) { isAllowedWenkuImageUrl(url) }
+    return if (isWenkuImage) {
         PresentationAccess.wenkuImageLoader
     } else PresentationAccess.imageLoader
 }

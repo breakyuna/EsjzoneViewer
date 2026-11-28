@@ -29,12 +29,52 @@ object ReaderNameReplace {
     const val MAX_TARGET = 4096
     private const val MAX_INPUT = 131_072
     private const val MAX_OUTPUT = 262_144
-    private const val MAX_WORK = 16_000_000L
     private const val MAX_MATCHES = 4096
+    private const val MAX_ROLLBACKS = 8
+    private const val MAX_PATTERN_CACHE = 256
+    private const val MAX_RULE_SET_CACHE = 64
 
-    fun supportedPattern(source: String): Boolean = source.length <= MAX_PATTERN && runCatching {
-        com.google.re2j.Pattern.compile(source).programSize() <= 512
-    }.getOrDefault(false)
+    private class PatternEntry(val pattern: com.google.re2j.Pattern?)
+    private data class RuleSignature(val source: String, val target: String, val regex: Boolean)
+    private data class RuleSetKey(val activeBookKey: String?, val rules: List<RuleSignature>)
+
+    private sealed interface CompiledRule {
+        val source: String
+        val target: String
+
+        data class Literal(override val source: String, override val target: String) : CompiledRule
+        data class Regex(
+            override val source: String,
+            override val target: String,
+            val pattern: com.google.re2j.Pattern
+        ) : CompiledRule
+    }
+
+    private val patternCache = object : LinkedHashMap<String, PatternEntry>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PatternEntry>?): Boolean =
+            size > MAX_PATTERN_CACHE
+    }
+
+    private val ruleSetCache = object : LinkedHashMap<RuleSetKey, List<CompiledRule>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RuleSetKey, List<CompiledRule>>?): Boolean =
+            size > MAX_RULE_SET_CACHE
+    }
+
+    private fun compileRegex(source: String): com.google.re2j.Pattern? {
+        synchronized(patternCache) {
+            patternCache[source]?.let { return it.pattern }
+        }
+        val compiled = runCatching {
+            com.google.re2j.Pattern.compile(source).takeIf { it.programSize() <= 512 }
+        }.getOrNull()
+        synchronized(patternCache) {
+            patternCache.putIfAbsent(source, PatternEntry(compiled))?.let { return it.pattern }
+        }
+        return compiled
+    }
+
+    fun supportedPattern(source: String): Boolean =
+        source.length <= MAX_PATTERN && compileRegex(source) != null
 
     fun validate(settings: ReaderNameReplaceSettings) {
         require(settings.rules.size <= MAX_RULES) { "Too many replacement rules" }
@@ -50,22 +90,37 @@ object ReaderNameReplace {
     fun isActive(settings: ReaderNameReplaceSettings): Boolean =
         settings.enabled && settings.rules.take(MAX_RULES).any { applicable(it, settings) }
 
-    private data class Edit(val start: Int, val end: Int, val target: String)
-    private class BudgetExceeded : RuntimeException()
-    private class Candidate(val rule: ReaderNameReplaceRule, val matcher: com.google.re2j.Matcher) {
-        var found = false
-        var started = false
-        fun seek(index: Int) {
-            if (!started || (found && matcher.start() < index)) {
-                found = matcher.find(index)
-                started = true
-            }
+    private fun compiledRules(settings: ReaderNameReplaceSettings): List<CompiledRule> {
+        if (!settings.enabled) return emptyList()
+        val applicableRules = settings.rules.take(MAX_RULES).filter { applicable(it, settings) }
+        if (applicableRules.isEmpty()) return emptyList()
+        val key = RuleSetKey(
+            settings.activeBookKey,
+            applicableRules.map { RuleSignature(it.source, it.target, it.regex) }
+        )
+        synchronized(ruleSetCache) {
+            ruleSetCache[key]?.let { return it }
         }
+        val compiled = applicableRules
+            .sortedByDescending { it.source.length }
+            .mapNotNull { rule ->
+                if (rule.regex) {
+                    compileRegex(rule.source)?.let { CompiledRule.Regex(rule.source, rule.target, it) }
+                } else {
+                    CompiledRule.Literal(rule.source, rule.target)
+                }
+            }
+        synchronized(ruleSetCache) {
+            ruleSetCache.putIfAbsent(key, compiled)?.let { return it }
+        }
+        return compiled
     }
 
+    private data class Edit(val start: Int, val end: Int, val target: String)
+    private class BudgetExceeded : RuntimeException()
+
     /** Expand captures without appendReplacement copying the entire prefix for every match. */
-    private fun replacement(rule: ReaderNameReplaceRule, matcher: com.google.re2j.Matcher): String? = runCatching {
-        if (!rule.regex) return@runCatching rule.target
+    private fun replacement(rule: CompiledRule.Regex, matcher: com.google.re2j.Matcher): String? = runCatching {
         buildString {
             var index = 0
             fun add(value: String) {
@@ -106,80 +161,162 @@ object ReaderNameReplace {
     }
 
     private fun edits(text: String, settings: ReaderNameReplaceSettings): List<Edit>? {
-        if (!isActive(settings) || text.isEmpty() || text.length > MAX_INPUT) return null
-        var work = 0L
-        val candidates = settings.rules.take(MAX_RULES).filter { applicable(it, settings) }
-            .sortedByDescending { it.source.length }.mapNotNull { rule ->
-                runCatching {
-                    val pattern = com.google.re2j.Pattern.compile(
-                        if (rule.regex) rule.source else com.google.re2j.Pattern.quote(rule.source))
-                    if (pattern.programSize() > 512) return@runCatching null
-                    work += pattern.programSize().toLong() * text.length
-                    Candidate(rule, pattern.matcher(text))
-                }.getOrNull()
-            }
-        if (work > MAX_WORK) return null
-        val result = ArrayList<Edit>()
-        var index = 0
-        var outputLength = text.length.toLong()
-        while (index <= text.length) {
-            var chosen: Edit? = null
-            for (candidate in candidates) {
-                candidate.seek(index)
-                if (!candidate.found) continue
-                val matcher = candidate.matcher
-                if (chosen != null && matcher.start() >= chosen.start) continue
-                val target = try { replacement(candidate.rule, matcher) }
-                    catch (_: BudgetExceeded) { return null }
-                if (target == null) continue
-                chosen = Edit(matcher.start(), matcher.end(), target)
-            }
-            val edit = chosen ?: break
-            if (result.size >= MAX_MATCHES) return null
-            outputLength += edit.target.length.toLong() - (edit.end - edit.start)
-            if (outputLength > MAX_OUTPUT) return null
-            result.add(edit)
-            index = if (edit.end > edit.start) edit.end else edit.end + 1
-        }
-        return result
-    }
+        if (!settings.enabled || text.isEmpty() || text.length > MAX_INPUT) return null
+        val rules = compiledRules(settings)
+        if (rules.isEmpty()) return null
 
-    private fun scan(text: String, edits: List<Edit>, append: (Int, Int, String) -> Unit) {
-        var index = 0
-        for (edit in edits) {
-            while (index < edit.start) {
-                append(index, index + 1, text.substring(index, index + 1))
-                index++
+        val disabled = BooleanArray(rules.size)
+        var rollbacks = 0
+        while (true) {
+            val result = ArrayList<Edit>()
+            val matchCounts = IntArray(rules.size)
+            val matchStarts = IntArray(rules.size)
+            val matchEnds = IntArray(rules.size)
+            val foundFlags = BooleanArray(rules.size)
+            val startedFlags = BooleanArray(rules.size)
+            val matchers = arrayOfNulls<com.google.re2j.Matcher>(rules.size)
+            for (i in rules.indices) {
+                if (!disabled[i]) {
+                    val rule = rules[i]
+                    if (rule is CompiledRule.Regex) {
+                        matchers[i] = rule.pattern.matcher(text)
+                    }
+                }
             }
-            append(edit.start, edit.end, edit.target)
-            index = edit.end
-        }
-        while (index < text.length) {
-            append(index, index + 1, text.substring(index, index + 1))
-            index++
+
+            var index = 0
+            var outputLength = text.length.toLong()
+            var needsRestart = false
+            while (index <= text.length) {
+                var chosen: Edit? = null
+                var chosenRule = -1
+                for (i in rules.indices) {
+                    if (disabled[i]) continue
+                    if (matchCounts[i] >= MAX_MATCHES) {
+                        disabled[i] = true
+                        continue
+                    }
+                    if (!startedFlags[i] || (foundFlags[i] && matchStarts[i] < index)) {
+                        startedFlags[i] = true
+                        when (val rule = rules[i]) {
+                            is CompiledRule.Literal -> {
+                                val pos = text.indexOf(rule.source, index)
+                                if (pos >= 0) {
+                                    foundFlags[i] = true
+                                    matchStarts[i] = pos
+                                    matchEnds[i] = pos + rule.source.length
+                                } else {
+                                    foundFlags[i] = false
+                                }
+                            }
+                            is CompiledRule.Regex -> {
+                                val matcher = matchers[i]!!
+                                if (matcher.find(index)) {
+                                    foundFlags[i] = true
+                                    matchStarts[i] = matcher.start()
+                                    matchEnds[i] = matcher.end()
+                                } else {
+                                    foundFlags[i] = false
+                                }
+                            }
+                        }
+                    }
+                    if (!foundFlags[i]) continue
+                    val start = matchStarts[i]
+                    if (chosen != null && start >= chosen.start) continue
+                    val target = when (val rule = rules[i]) {
+                        is CompiledRule.Literal -> rule.target
+                        is CompiledRule.Regex -> try {
+                            replacement(rule, matchers[i]!!)
+                        } catch (_: BudgetExceeded) {
+                            disabled[i] = true
+                            if (matchCounts[i] > 0) {
+                                rollbacks++
+                                if (rollbacks > MAX_ROLLBACKS) return null
+                                needsRestart = true
+                                break
+                            }
+                            continue
+                        }
+                    } ?: continue
+                    chosen = Edit(start, matchEnds[i], target)
+                    chosenRule = i
+                }
+                if (needsRestart) break
+                val edit = chosen ?: break
+                val delta = edit.target.length.toLong() - (edit.end - edit.start)
+                if (outputLength + delta > MAX_OUTPUT) {
+                    disabled[chosenRule] = true
+                    if (matchCounts[chosenRule] > 0) {
+                        rollbacks++
+                        if (rollbacks > MAX_ROLLBACKS) return null
+                        needsRestart = true
+                        break
+                    }
+                    continue
+                }
+                outputLength += delta
+                matchCounts[chosenRule]++
+                result.add(edit)
+                index = if (edit.end > edit.start) edit.end else edit.end + 1
+            }
+            if (!needsRestart) return result
         }
     }
 
     fun apply(text: String, settings: ReaderNameReplaceSettings): String {
         val edits = edits(text, settings)?.takeIf { it.isNotEmpty() } ?: return text
-        return buildString(text.length) { scan(text, edits) { _, _, target -> append(target) } }
+        return buildString(text.length) {
+            var index = 0
+            for (edit in edits) {
+                if (index < edit.start) append(text, index, edit.start)
+                append(edit.target)
+                index = edit.end
+            }
+            if (index < text.length) append(text, index, text.length)
+        }
     }
 
     fun mapping(offsets: ReaderTextOffsets, settings: ReaderNameReplaceSettings): ReaderTextOffsets {
-        val edits = edits(offsets.text, settings)?.takeIf { it.isNotEmpty() } ?: return offsets
-        val starts = ArrayList<Int>()
-        val ends = ArrayList<Int>()
-        val text = buildString(offsets.text.length) {
-            scan(offsets.text, edits) { start, end, target ->
-                append(target)
-                repeat(target.length) {
-                    val sourceStart = offsets.sourceStarts.getOrElse(start) { offsets.sourceLength }
-                    starts.add(sourceStart)
-                    ends.add(if (end > start) offsets.sourceEnds[end - 1] else sourceStart)
+        val sourceText = offsets.text
+        val edits = edits(sourceText, settings)?.takeIf { it.isNotEmpty() } ?: return offsets
+        var delta = 0
+        for (edit in edits) {
+            delta += edit.target.length - (edit.end - edit.start)
+        }
+        val finalLength = sourceText.length + delta
+        val starts = IntArray(finalLength)
+        val ends = IntArray(finalLength)
+        val text = buildString(finalLength) {
+            var index = 0
+            var out = 0
+            for (edit in edits) {
+                val gap = edit.start - index
+                if (gap > 0) {
+                    append(sourceText, index, edit.start)
+                    System.arraycopy(offsets.sourceStarts, index, starts, out, gap)
+                    System.arraycopy(offsets.sourceEnds, index, ends, out, gap)
+                    out += gap
                 }
+                val targetLength = edit.target.length
+                if (targetLength > 0) {
+                    append(edit.target)
+                    val sourceStart = offsets.sourceStarts.getOrElse(edit.start) { offsets.sourceLength }
+                    val sourceEnd = if (edit.end > edit.start) offsets.sourceEnds[edit.end - 1] else sourceStart
+                    starts.fill(sourceStart, out, out + targetLength)
+                    ends.fill(sourceEnd, out, out + targetLength)
+                    out += targetLength
+                }
+                index = edit.end
+            }
+            val tail = sourceText.length - index
+            if (tail > 0) {
+                append(sourceText, index, sourceText.length)
+                System.arraycopy(offsets.sourceStarts, index, starts, out, tail)
+                System.arraycopy(offsets.sourceEnds, index, ends, out, tail)
             }
         }
-        return ReaderTextOffsets(text, starts.toIntArray(), ends.toIntArray(), offsets.sourceLength)
+        return ReaderTextOffsets(text, starts, ends, offsets.sourceLength)
     }
 
     fun blockMapping(

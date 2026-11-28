@@ -73,6 +73,7 @@ private val readerFontFiles = listOf(
 internal object ReaderFontStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requested = ConcurrentHashMap.newKeySet<ReaderFont>()
+    private val fontLocks = ReaderFont.entries.associateWith { Any() }
     private val familiesState = MutableStateFlow<Map<ReaderFont, FontFamily>>(emptyMap())
     private val families = familiesState.asStateFlow()
 
@@ -110,11 +111,22 @@ internal object ReaderFontStore {
     }
 
     private fun publishIfValid(fontFile: ReaderFontFile, file: File): Boolean {
-        if (file.length() != fontFile.bytes || sha256(file) != fontFile.sha256) return false
-        val typeface = runCatching { Typeface.Builder(file).build() }.getOrNull() ?: return false
-        val family = FontFamily(typeface)
-        familiesState.update { it + (fontFile.font to family) }
-        return true
+        synchronized(fontLocks.getValue(fontFile.font)) {
+            if (fontFile.font in familiesState.value) return true
+            if (!file.isFile || file.length() != fontFile.bytes) {
+                if (file.isFile) file.delete()
+                return false
+            }
+            val typeface = runCatching { Typeface.Builder(file).build() }.getOrNull()
+                ?.takeIf { it != Typeface.DEFAULT }
+            if (typeface == null) {
+                file.delete()
+                return false
+            }
+            val family = FontFamily(typeface)
+            familiesState.update { it + (fontFile.font to family) }
+            return true
+        }
     }
 
     suspend fun download(context: Context, font: ReaderFont) = withContext(Dispatchers.IO) {
@@ -151,25 +163,15 @@ internal object ReaderFontStore {
                     throw IOException("Font checksum mismatch")
                 }
             }
-            if (!temporary.renameTo(destination)) throw IOException("Could not save font")
-            if (!publishIfValid(fontFile, destination)) throw IOException("Could not load font")
+            synchronized(fontLocks.getValue(font)) {
+                if (publishIfValid(fontFile, destination)) return@withContext
+                if (!temporary.renameTo(destination)) throw IOException("Could not save font")
+                if (!publishIfValid(fontFile, destination)) throw IOException("Could not load font")
+            }
         } finally {
             temporary.delete()
         }
     }
-
-    private fun sha256(file: File): String = runCatching {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        digest.digest().toHex()
-    }.getOrDefault("")
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 

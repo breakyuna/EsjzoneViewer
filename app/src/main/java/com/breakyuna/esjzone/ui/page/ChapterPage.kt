@@ -632,8 +632,6 @@ class ChapterPage(
         }
         var initialScrollPrimed by remember { mutableStateOf(false) }
         var entryContentRevealed by remember { mutableStateOf(false) }
-        var positionRestoreFailed by remember { mutableStateOf(false) }
-        var positionRestoreAttempt by remember { mutableIntStateOf(0) }
         val requestedChapterLocked = result?.chapters?.any {
             sameReaderChapter(it.chapter, requestedChapter.value) && it.requiresPassword
         } == true
@@ -1537,7 +1535,6 @@ class ChapterPage(
         }
 
         fun seekTo(location: ReaderBookLocation) {
-            positionRestoreFailed = false
             resumePending = false
             pendingUnderline = null
             pendingBookmark = null
@@ -1709,8 +1706,8 @@ class ChapterPage(
         }
 
         LaunchedEffect(pendingSeekLocation, result?.chapters, displayItems, paginationReady, scriptReady, pagedMode,
-            readerBodyStartOffset, initialScrollPrimed, entryAnimationFinished, positionRestoreAttempt) {
-            if (!entryAnimationFinished || !initialScrollPrimed || !paginationReady || !scriptReady) return@LaunchedEffect
+            readerBodyStartOffset, initialScrollPrimed) {
+            if (!initialScrollPrimed || !paginationReady || !scriptReady) return@LaunchedEffect
             val target = pendingSeekLocation ?: return@LaunchedEffect
             val startIndex = firstItemByChapter[chapterIdentity(target.chapter)] ?: run {
                 val loaded = chapterPageModel.state.value as? ChapterPageModel.State.Result
@@ -1721,7 +1718,6 @@ class ChapterPage(
                 }
                 return@LaunchedEffect
             }
-            positionRestoreFailed = false
             isProgrammaticScroll = true
             val restoreStarted = System.nanoTime()
             var restoreStatus = "cancelled"
@@ -1739,16 +1735,13 @@ class ChapterPage(
                 AppLogger.i("ReaderTiming", "positionMs=${(System.nanoTime() - restoreStarted) / 1_000_000} status=$restoreStatus")
             }
             if (!restored) {
-                AppLogger.w("ChapterPage", "Position restoration failed; retaining saved position for retry")
-                positionRestoreFailed = true
-                return@LaunchedEffect
+                AppLogger.w("ChapterPage", "Position restoration timed out; revealing best fallback position")
             }
             pendingSeekLocation = null
             resumePending = false
         }
 
         fun openTargetChapter(target: Chapter, bookmark: ReaderAnchor? = null, underline: ReaderUnderline? = null) {
-            positionRestoreFailed = false
             pendingUnderline = underline?.let { target to it }
             pendingBookmark = bookmark?.let { target to it.copy(chapterKey = chapterIdentity(target)) }
             pendingBoundaryTurn = null
@@ -1837,10 +1830,10 @@ class ChapterPage(
             state is ChapterPageModel.State.Loading || state is ChapterPageModel.State.SecurityCheck ||
             (result != null && (!initialScrollPrimed || !scriptReady || !paginationReady ||
                 (resumePending && !requestedChapterLocked) || pendingSeekLocation != null))
-        LaunchedEffect(entryAnimationFinished, waitingForEntryPosition, result, displayItems, pagedMode) {
-            if (entryContentRevealed || !entryAnimationFinished || waitingForEntryPosition) return@LaunchedEffect
+        LaunchedEffect(waitingForEntryPosition, result, displayItems, pagedMode) {
+            if (entryContentRevealed || waitingForEntryPosition) return@LaunchedEffect
             if (result != null) {
-                val laidOut = kotlinx.coroutines.withTimeoutOrNull(2000L) {
+                val laidOut = kotlinx.coroutines.withTimeoutOrNull(250L) {
                     snapshotFlow {
                         if (pagedMode) pagerLayoutReady else scrollState.layoutInfo.visibleItemsInfo.any {
                             it.key.toString() in displayByKey
@@ -1855,13 +1848,12 @@ class ChapterPage(
         }
         // A password form must be usable without consuming the saved anchor. Hide
         // the body again when unlocking starts its deferred exact restoration.
-        val entryCoverVisible = !entryContentRevealed || positionRestoreFailed || (result != null && resumePositioning)
+        val entryCoverVisible = !entryContentRevealed || (result != null && resumePositioning)
         val onEntryReady = com.breakyuna.esjzone.ui.navigation.LocalReaderEntryReady.current
-        LaunchedEffect(entryCoverVisible, positionRestoreFailed) {
-            if (!entryCoverVisible || positionRestoreFailed) {
+        LaunchedEffect(entryCoverVisible) {
+            if (!entryCoverVisible) {
                 withFrameNanos { }
-                AppLogger.i("ReaderTiming", "entryReadyMs=${(System.nanoTime() - firstContentStarted) / 1_000_000} " +
-                    "positionFailed=$positionRestoreFailed")
+                AppLogger.i("ReaderTiming", "entryReadyMs=${(System.nanoTime() - firstContentStarted) / 1_000_000}")
                 onEntryReady()
             }
         }
@@ -2072,11 +2064,7 @@ class ChapterPage(
             transparency = imageBackground.transparency,
             cropX = imageBackground.cropX,
             cropY = imageBackground.cropY,
-            loadingDescription = readerLoadingDescription,
-            onRetryPosition = if (positionRestoreFailed) ({
-                positionRestoreFailed = false
-                positionRestoreAttempt++
-            }) else null
+            loadingDescription = readerLoadingDescription
         ) {
         ReaderSidePanels(
             state = sidePanels,
@@ -2153,8 +2141,8 @@ class ChapterPage(
                 Box(modifier = Modifier.fillMaxSize().onSizeChanged { size ->
                     if (pagedMode && readerViewport == IntSize.Zero) readerViewport = size
                 }) {
-                    if (entryAnimationFinished && (entryContentRevealed || result == null ||
-                            (initialScrollPrimed && !restoreLookupPending && scriptReady))) {
+                    if (entryContentRevealed || result == null ||
+                            (initialScrollPrimed && !restoreLookupPending && scriptReady)) {
                     if (!pagedMode || state !is ChapterPageModel.State.Result) {
                     ReaderScrollGlowSurface(
                         background = imageBackdrop.bitmap.takeIf { customBackground && !pagedMode },

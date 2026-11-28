@@ -132,6 +132,7 @@
 | 返回形态 | JSON；观察到 Bootstrap Table 的 `total` 与 `rows` 字段，主题链接位于 `rows[].subject` HTML 中 |
 | 初始占位 | HTML 首次解析可见 `no-records-found`，但脚本加载后非空板块会填充主题行 |
 | 空板块判定 | 仅当 `totalRows=0` 或动态 JSON 确认总数为 0 时返回空列表 |
+| 客户端缓存 | 板块 HTML 与动态 JSON 分别按当前会话、板块页与规范化端点键缓存（`PageCacheTtl.COMMUNITY`）；常规进入优先命中缓存并在异常时回退过期缓存（`allowStaleOnError = !forceRefresh`），主动重试或刷新（`forceRefresh = true`）强制请求最新数据。JSON 请求前获取页面缓存写入令牌，清空缓存或较新请求启动后，旧响应无法回写 |
 | 证据 | ESJ 作品板与天空大公國讨论板均在云浏览器中观察到；直接把接口 URL 当作顶层页面打开可能被浏览器客户端拦截，不能据此判定正常板页脚本请求失败 |
 
 ## 4. 表单端点
@@ -181,22 +182,20 @@
 
 - 先 POST 当前论坛主题或章节页面，Body 为 `plxf=getAuthToken`；从 `<JinJing>...</JinJing>` 提取动态 token。
 - 再 POST `/inc/forum_reply.php`，携带同一 CookieJar、`authorization: {token}`、`X-Requested-With: XMLHttpRequest`、`Origin: https://www.esjzone.cc` 与 URL-encoded form。
-- 客户端获取动态 token、提交评论/回复及留言板提交使用连接超时 5 秒、读取超时 12 秒、单次请求总超时 16 秒；读取和总超时各延长 4 秒。此限制不覆盖发送前的经验值获取、评论页读取或并发的经验值校对。
+- 客户端获取动态 token、提交评论/回复及留言板提交使用连接超时 5 秒、读取超时 12 秒、单次请求总超时 16 秒；读取和总超时各延长 4 秒。
 - HTTP 2xx 不代表写入成功；解析 JSON `status`。`status=200` 成功，其他状态直接展示非空 `msg`。实测 `status=214`、`msg=每日留言次數已超過限制！` 为当日次数上限。
 - 成功响应可带 `anchor="#comment-{commentId}"`，用于定位新评论。业务失败不得刷新或假装评论已发送。
-- 客户端先取得发送前经验值基线，在实际发起评论 POST 时并发启动经验值校对，不在获取动态 token 时启动。校对强制刷新资料并独立发起请求，不复用发送前的在途资料请求。发送后经验值增加视为可靠确认：直接追加本地评论、定位新评论并清空草稿、回复和错误状态，无须等待提交响应或页面再次显示评论。若列表已包含此次评论则直接使用，避免重复追加；否则使用本地临时评论 ID，真实 ID 由后续页面刷新取得。这是客户端确认策略，不代表本次已观察到网页中的新评论。
-- 并发经验值校对最多检查 3 次，首次立即读取，后续读取前间隔 6 秒；缺失、持平或下降只表示尚未确认。提交响应超时或页面未核验到评论时，等待剩余校对，再补一次独立资料读取；超时分支同时保留 3 秒后读取评论页的核验。未确认期间保持发送状态，核验全部结束仍未确认时才显示超时或未核验提示。接口成功、经验值增加或页面核验任一路完成后只更新一次；迟到的提交结果不得覆盖成功或较新发送的状态。接口明确拒绝且当前发送尚未确认时停止校对并展示业务错误，不自动重发。确认前启动的页面刷新不能覆盖本地成功状态。
-- 发起评论 POST 时记录设备本地时间（`yyyy-MM-dd HH:mm:ss`），接口成功和经验值确认路径均以该请求发起时间填写本地增量评论的 `createdAt`；校对完成时间不用于评论时间。该时间没有加入请求参数，后续刷新以网页中的服务器评论时间替换。
+- 发起评论 POST 时记录设备本地时间（`yyyy-MM-dd HH:mm:ss`）；接口返回 `status=200` 后立即失效页面缓存、以该本地时间构造增量评论写入列表并清空草稿/回复/错误状态（真实楼层与服务器时间由后续刷新替换），随后异步触发一次非阻塞资料刷新（`refreshProfileSnapshot`），不再在打开评论区时预刷个人资料，也不在发评前后执行阻塞式经验值基线获取或 6 秒间隔轮询。
+- 提交遇到网络超时（`TIMEOUT`）、POST 返回 HTTP 5xx 或无法识别的评论响应、留言板刷新无法获取评论列表（后三种为 `NOT_VERIFIED`）时，立即刷新一次评论列表核对（`silentVerifySubmission`）。若仍未确认，保留待核验提示，用户刷新后可重试。提交前的失败和服务端明确拒绝会解除发送锁。
 
 ### 7.2 客户端评论流程计时日志
 
 - 日志标签为 `CommentTiming`，现有应用日志导出会包含这些记录。`trace` 是进程内递增的本地编号，`operation=load` 表示评论区加载，`operation=submit` 表示一次发送；同一次发送的后台恢复使用相同编号。
 - 每个阶段仅在结束时记录一次结果及耗时，取消逐阶段的 `started` 日志以减少重复输出；保留流程开始/结束和下述明确时间节点。`elapsed_ms` 为该阶段耗时，`total_ms` 为距离流程开始的累计耗时。使用单调时钟，不受系统时间调整影响；异常只记录类型，不记录异常消息、评论正文、请求 URL、响应正文、Cookie 或认证字段。
-- 加载阶段包括 `experience_prefetch`（与评论加载并行）、`initial_comments_read`、`comments_refresh_parse` 和 `comments_publish`。`initial_comments_read` 只读取本地页面缓存，允许先展示过期评论；缓存缺失时不发请求。随后 `comments_refresh_parse` 执行一次可取消的强制刷新，避免无缓存首次打开时连续请求同一页面两次。发送阶段包括经验值预取等待/复用/重新获取、页面读取或预取复用、`auth_token`、`comment_post`、`response_headers`（从执行 POST 到收到响应头）、`response_body`、`response_parse`、缓存失效、本地评论构造和 `ui_state_update`。
-- 留言板还记录 `guestbook_post`、`guestbook_refresh` 和 `guestbook_verify`。并发校对记录 `experience_confirmation_including_delays`、`experience_confirmation_delay` 和 `experience_confirmation_fetch`；页面恢复另记录固定延时与页面请求；发送成功后的资料刷新记录为 `profile_refresh_after_success`。
-- 明确时间节点包括 `before_send_experience_started` / `before_send_experience_ready`（发送前经验值获取或预取复用）、`after_send_experience_started` / `after_send_experience_ready`（发送后资料请求，完成节点在缓存写入之前）、`comment_response_accepted`（评论接口确认接受）、`comment_post_started`（发起评论 POST，同时记录本地显示时间并启动并发校对）和 `new_comment_added_to_list`（新评论写入页面列表状态）。恢复路径另有 `new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`；发送后经验值重查会再次记录同名节点。节点的绝对时间由日志前缀提供，精确到毫秒，`total_ms` 表示距流程开始的相对时间；`available` / `unavailable` 区分是否取得经验值，不记录数值。
-- 经验值确认成功另记录 `comment_experience_confirmed`，紧接 `ui_state_update` 和 `new_comment_added_to_list_after_experience`；资料缓存写入在界面状态更新后进行。个人资料页订阅当前账户的经验值缓存，直接显示此次确认得到的经验值，无须为此再请求资料接口。
-- `stage=flow` 的结束记录表示发送协程结束；经验值先确认时界面可提前结束发送状态，而提交请求仍等待响应，故该结束记录不一定等于界面等待时长。后续后台记录不计入该协程耗时。`completed` 只表示该阶段正常返回，发送成功可由流程结果 `accepted` 或后续的 `comment_experience_confirmed`、评论页面核验成功节点确认。嵌套阶段和并行阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。
+- 加载阶段包括 `initial_comments_read`、`comments_refresh_parse` 和 `comments_publish`。`initial_comments_read` 只读取本地页面缓存，允许先展示过期评论；缓存缺失时不发请求。随后 `comments_refresh_parse` 执行一次可取消的强制刷新，避免无缓存首次打开时连续请求同一页面两次。发送阶段包括 `page_read_parse` / `page_preparation_reuse`、`auth_token`、`comment_post`、`response_headers`（从执行 POST 到收到响应头）、`response_body`、`response_parse`、`cache_invalidate`、`local_comment_create` 和 `ui_state_update`。
+- 留言板还记录 `guestbook_post`、`guestbook_refresh` 和 `guestbook_verify`。超时或需要额外核对列表的未核验恢复分支记录 `comment_recovery` 与 `comment_recovery_fetch`；发送成功或刷新核验确认后的异步资料刷新记录为 `profile_refresh_after_success`。
+- 明确时间节点包括 `comment_post_started`（发起评论 POST）、`comment_response_accepted`（评论接口确认接受）、`new_comment_added_to_list`（新评论写入页面列表状态）、`new_comment_added_to_list_after_recovery` / `new_comment_verified_after_refresh`（后台核验或手动刷新确认新评论），以及发送成功/恢复确认后异步资料刷新的 `after_send_experience_started` / `after_send_experience_ready`（`available` / `unavailable` 区分是否取得经验值，不记录数值；绝对时间由日志前缀提供）。
+- `stage=flow` 的结束记录表示发送协程结束，后续异步 `profile_refresh_after_success` 不计入该协程耗时。`completed` 只表示该阶段正常返回，发送成功可由流程结果 `accepted` 或恢复确认 `confirmed` 标识。嵌套阶段不能直接相加；`ui_state_update` 测量状态写入，不代表屏幕已经完成绘制。
 
 ## 小说详情客户端入口边界
 

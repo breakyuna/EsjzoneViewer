@@ -102,7 +102,7 @@ internal suspend fun restoreChapterPosition(
         if (exactAnchor?.kind == "text" && !pagedMode) {
             val block = displayItems[targetIndex].entry.document.blocks.getOrNull(exactAnchor.blockIndex)
             if (block == null || block.isBlankLine()) return@restoreReaderPosition true
-            val layout = withTimeoutOrNull(1500L) {
+            val layout = withTimeoutOrNull(300L) {
                 snapshotFlow { textLayouts[targetItemKey] }.first { it != null }
             }
             if (layout != null) {
@@ -116,7 +116,7 @@ internal suspend fun restoreChapterPosition(
             val visible = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetItemKey }
             if (visible != null) scrollState.scrollToItem(visible.index, visible.size)
         } else if (itemFraction > 0f && !pagedMode) {
-            val itemSize = withTimeoutOrNull(1000L) {
+            val itemSize = withTimeoutOrNull(200L) {
                 snapshotFlow {
                     scrollState.layoutInfo.visibleItemsInfo
                         .firstOrNull { it.key == targetItemKey }

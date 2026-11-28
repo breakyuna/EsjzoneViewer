@@ -43,6 +43,9 @@ private val BLOCK_TAG_NAMES = setOf(
 )
 
 private val IGNORED_TAG_NAMES = setOf("script", "style", "noscript", "template", "rp")
+internal val IMAGE_URL_ATTRIBUTES = listOf(
+    "data-src", "data-original", "data-lazy-src", "data-actualsrc", "data-url", "data-origin", "data-file", "src"
+)
 
 private fun Node.isBlockElement(): Boolean =
     this is Element && normalName() in BLOCK_TAG_NAMES
@@ -170,6 +173,10 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
                 currentTexts.addAll(analyseText(node, styles))
                 return
             }
+            if (node.nameIs("ruby")) {
+                collectRuby(node, styles, ::collectMixed)
+                return
+            }
 
             val newStyles = extractInlineStyles(node, styles)
 
@@ -190,16 +197,7 @@ internal fun analyseParagraph(paragraph: Element): List<Component> {
 internal fun resolveImageUrl(image: Element): String {
     // A non-empty placeholder src must not hide the real lazy-loaded URL.
     val baseUrl = image.baseUri().trim().ifBlank { EsjzoneUrls.Base }
-    return sequenceOf(
-        "data-src",
-        "data-original",
-        "data-lazy-src",
-        "data-actualsrc",
-        "data-url",
-        "data-origin",
-        "data-file",
-        "src"
-    )
+    return IMAGE_URL_ATTRIBUTES.asSequence()
         .mapNotNull { attribute ->
             val raw = image.attr(attribute).trim()
             when {
@@ -240,6 +238,45 @@ private fun extractInlineStyles(node: Element, baseStyles: List<TextStyle>): Lis
     return newStyles
 }
 
+private fun collectRuby(ruby: Element, styles: List<TextStyle>, emit: (Node, List<TextStyle>) -> Unit) {
+    val base = mutableListOf<Pair<Node, List<TextStyle>>>()
+    val readings = mutableListOf<TextComponent>()
+
+    fun flush() {
+        val reading = readings.firstOrNull()?.also { first ->
+            for (extra in readings.drop(1)) first.append(TextComponent(" ")).append(extra)
+        }
+        val annotation = reading?.let(::FuriganaTextStyle)
+        for ((node, inherited) in base) emit(node, if (annotation == null) inherited else inherited + annotation)
+        base.clear()
+        readings.clear()
+    }
+
+    fun walk(node: Node, inherited: List<TextStyle>) {
+        when (node) {
+            is TextNode -> {
+                if (readings.isNotEmpty() && node.text().isNotBlank()) flush()
+                base.add(node to inherited)
+            }
+            is Element -> when (node.normalName()) {
+                in IGNORED_TAG_NAMES -> Unit
+                "rt" -> analyseText(node, emptyList()).toSingle().firstOrNull()?.let(readings::add)
+                "img", "br", "ruby" -> {
+                    if (readings.isNotEmpty()) flush()
+                    base.add(node to inherited)
+                }
+                else -> {
+                    val nestedStyles = extractInlineStyles(node, inherited)
+                    node.childNodes().forEach { walk(it, nestedStyles) }
+                }
+            }
+        }
+    }
+
+    ruby.childNodes().forEach { walk(it, styles) }
+    flush()
+}
+
 private fun analyseText(node: Node, styles: List<TextStyle>): List<TextComponent> {
     if (node is TextNode) {
         var component = TextComponent(node.text())
@@ -251,55 +288,7 @@ private fun analyseText(node: Node, styles: List<TextStyle>): List<TextComponent
         val list = mutableListOf<TextComponent>()
 
         if (node.nameIs("ruby")) {
-            val directRts = node.children().filter { it.nameIs("rt") }
-            if (directRts.isNotEmpty()) {
-                val pendingBase = mutableListOf<Node>()
-                fun emitBase(appliedStyles: List<TextStyle>) {
-                    for (baseNode in pendingBase) {
-                        if (baseNode is TextNode) {
-                            list.addAll(analyseText(baseNode, appliedStyles))
-                        } else if (baseNode is Element && !baseNode.nameIs("rp") && !baseNode.nameIs("rt")) {
-                            list.addAll(analyseText(baseNode, appliedStyles))
-                        }
-                    }
-                    pendingBase.clear()
-                }
-                for (childNode in node.childNodes()) {
-                    if (childNode is Element && childNode.nameIs("rt")) {
-                        val single = analyseText(childNode, emptyList()).toSingle().firstOrNull()
-                        val applied = if (single != null) styles + FuriganaTextStyle(single) else styles
-                        emitBase(applied)
-                    } else if (childNode is Element && childNode.nameIs("rp")) {
-                        continue
-                    } else {
-                        pendingBase.add(childNode)
-                    }
-                }
-                emitBase(styles)
-                return list
-            }
-            val rt = node.getElementsByTag("rt").firstOrNull()
-            if (rt != null) {
-                val single = analyseText(rt, listOf()).toSingle().firstOrNull()
-                if (single != null) {
-                    val newStyles = styles + FuriganaTextStyle(single)
-                    for (childNode in node.childNodes()) {
-                        if (childNode is TextNode) {
-                            list.addAll(analyseText(childNode, newStyles))
-                        } else if (childNode is Element && !childNode.nameIs("rp") && !childNode.nameIs("rt")) {
-                            list.addAll(analyseText(childNode, newStyles))
-                        }
-                    }
-                    return list
-                }
-            }
-            for (childNode in node.childNodes()) {
-                if (childNode is TextNode) {
-                    list.addAll(analyseText(childNode, styles))
-                } else if (childNode is Element && !childNode.nameIs("rp") && !childNode.nameIs("rt")) {
-                    list.addAll(analyseText(childNode, styles))
-                }
-            }
+            collectRuby(node, styles) { base, inherited -> list.addAll(analyseText(base, inherited)) }
             return list
         } else if (node.nameIs("br")) {
             return listOf(NewLineComponent())

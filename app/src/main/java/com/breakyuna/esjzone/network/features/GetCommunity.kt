@@ -34,6 +34,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import okhttp3.Headers
 import okhttp3.FormBody
 import okhttp3.Request
@@ -98,7 +99,7 @@ class CommentSubmissionNotVerifiedException(
     val comments: List<Comment>,
     val previousIds: Set<String>
 ) : IOException(
-    "The server accepted the request but the new comment could not be verified after refresh"
+    "The outcome of the comment submission could not be verified"
 )
 
 class CommentSubmissionTimeoutException(
@@ -266,12 +267,7 @@ internal fun EsjzoneClient.submitForumComment(
                 }
             }
         } catch (error: IOException) {
-            if (error is NetworkHttpException || error is ForumReplyBusinessException ||
-                error is ForumReplyProtocolException
-            ) {
-                throw error
-            }
-            throw CommentSubmissionTimeoutException(previousComments, error)
+            throw commentPostFailure(error, previousComments, previousIds)
         }
 
         // Fast-path: On status 200, the server accepted and committed the comment.
@@ -338,8 +334,7 @@ internal fun EsjzoneClient.submitForumComment(
                 }
             }
         } catch (error: IOException) {
-            if (error is NetworkHttpException) throw error
-            throw CommentSubmissionTimeoutException(previousComments, error)
+            throw commentPostFailure(error, previousComments, previousIds)
         }
         if (looksLikeLoginDocument(responseBody)) {
             throw IOException("Comment request was redirected to login")
@@ -370,7 +365,17 @@ internal fun EsjzoneClient.submitForumComment(
     }
 }
 
-/** Builds the immediate UI result after either server acceptance or experience confirmation. */
+internal fun commentPostFailure(error: IOException, comments: List<Comment>, previousIds: Set<String>): IOException =
+    when (error) {
+        is ForumReplyBusinessException -> error
+        is NetworkHttpException -> if (error.statusCode in 500..599) {
+            CommentSubmissionNotVerifiedException(comments, previousIds)
+        } else error
+        is ForumReplyProtocolException -> CommentSubmissionNotVerifiedException(comments, previousIds)
+        else -> CommentSubmissionTimeoutException(comments, error)
+    }
+
+/** Builds the immediate UI result after server acceptance. */
 internal fun localCommentSubmission(
     parentId: String,
     content: String,
@@ -435,7 +440,7 @@ private fun forumPreparation(
 internal fun parseForumReplyResponse(body: String): ForumReplyResponse {
     val root = runCatching { JsonParser.parseString(body) }.getOrNull()?.takeIf { it.isJsonObject }
         ?.asJsonObject ?: throw ForumReplyProtocolException("Forum reply returned invalid JSON")
-    val status = root.get("status")?.takeIf { it.isJsonPrimitive }?.asInt
+    val status = root.intValue("status")
         ?: throw ForumReplyProtocolException("Forum reply response did not contain status")
     return ForumReplyResponse(
         status = status,
@@ -452,7 +457,7 @@ internal fun parseForumReplyResponse(body: String): ForumReplyResponse {
 
 private fun JsonObject.intValue(key: String): Int? = get(key)
     ?.takeIf { it.isJsonPrimitive }
-    ?.asInt
+    ?.asString?.toIntOrNull()
 
 /**
  * Fetches the short-lived write token without hiding network failures as an
@@ -604,20 +609,20 @@ sealed class ForumBoardResult {
  */
 fun EsjzoneClient.getForumBoard(
     authorization: Authorization,
-    thread: ForumThread
+    thread: ForumThread,
+    forceRefresh: Boolean = false,
+    allowStaleOnError: Boolean = !forceRefresh
 ): ForumBoardResult {
     val targetUrl = EsjzoneUrls.resolve(thread.url)
     AppLogger.i("GetCommunity", "Fetching forum board ${thread.id} at $targetUrl")
     val document = Jsoup.parse(
-        // Refresh the board shell so the data-url and current table metadata
-        // are read from the live page before requesting its JSON endpoint.
         getPage(
             authorization,
             targetUrl,
             PageCacheTtl.COMMUNITY,
             pageKind = PageKind.COMMUNITY,
-            forceRefresh = true,
-            allowStaleOnError = false
+            forceRefresh = forceRefresh,
+            allowStaleOnError = allowStaleOnError
         ),
         targetUrl
     )
@@ -654,21 +659,71 @@ fun EsjzoneClient.getForumBoard(
         throw ForumBoardDataException("Forum topic table has no data endpoint")
     }
     val endpoint = appendForumTableParams(EsjzoneUrls.resolve(dataUrl))
-    var authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
-    var body = getForumTableData(authorization, endpoint, targetUrl, authToken)
-    if (forumApplicationStatus(body) == 301) {
-        // Refresh the token once when the server reports the
-        // application-level authentication failure (status 301).
-        authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
-        body = getForumTableData(authorization, endpoint, targetUrl, authToken)
+    val payload = loadForumBoardTopicsPayload(
+        authorization = authorization,
+        targetUrl = targetUrl,
+        endpoint = endpoint,
+        fallbackBoardId = thread.id,
+        declaredTotal = declaredTotal,
+        forceRefresh = forceRefresh,
+        allowStaleOnError = allowStaleOnError
+    )
+    return forumBoardResult(novelDetailUrl, payload.items, payload.totalCount)
+}
+
+internal fun EsjzoneClient.loadForumBoardTopicsPayload(
+    authorization: Authorization,
+    targetUrl: String,
+    endpoint: String,
+    fallbackBoardId: String,
+    declaredTotal: Int?,
+    forceRefresh: Boolean,
+    allowStaleOnError: Boolean,
+    fetchFreshBody: () -> String = {
+        var authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
+        var body = getForumTableData(authorization, endpoint, targetUrl, authToken)
+        if (forumApplicationStatus(body) == 301) {
+            // Refresh the token once when the server reports the
+            // application-level authentication failure (status 301).
+            authToken = requireForumAuthToken(requestAuthToken(authorization, targetUrl))
+            body = getForumTableData(authorization, endpoint, targetUrl, authToken)
+        }
+        body
     }
-    validateForumTableResponse(body)
-    val payload = parseForumTopicsPayload(body, thread.id)
-    val totalCount = payload.totalCount ?: declaredTotal
-    if (payload.items.isEmpty() && totalCount != null && totalCount > 0) {
-        throw ForumBoardDataException("Forum topic response contained no readable topics")
+): ForumTopicsPayload {
+    val cacheKey =
+        "forum-board-json|${pageCacheKey(authorization, targetUrl)}|${EsjzoneUrls.canonicalCacheUrl(endpoint)}"
+    fun parseValidated(body: String): ForumTopicsPayload {
+        validateForumTableResponse(body)
+        val payload = parseForumTopicsPayload(body, fallbackBoardId)
+        val totalCount = payload.totalCount ?: declaredTotal
+        if (payload.items.isEmpty() && totalCount != null && totalCount > 0) {
+            throw ForumBoardDataException("Forum topic response contained no readable topics")
+        }
+        return payload.copy(totalCount = totalCount)
     }
-    return forumBoardResult(novelDetailUrl, payload.items, totalCount)
+    if (!forceRefresh) {
+        PageCache.read(cacheKey, PageCacheTtl.COMMUNITY)?.let { cachedBody ->
+            runCatching { parseValidated(cachedBody) }.getOrNull()?.let { return it }
+            PageCache.remove(cacheKey, CacheEventReason.INVALID_DATA)
+        }
+    }
+    val writeToken = PageCache.beginWrite(cacheKey)
+    return try {
+        val body = fetchFreshBody()
+        parseValidated(body).also {
+            PageCache.write(cacheKey, body, expected = writeToken)
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        if (allowStaleOnError) {
+            PageCache.readStale(cacheKey)?.let { staleBody ->
+                runCatching { parseValidated(staleBody) }.getOrNull()?.let { return it }
+            }
+        }
+        throw error
+    }
 }
 
 /**
@@ -713,6 +768,20 @@ private fun forumBoardResult(
     items = items,
     totalCount = totalCount
 )
+
+/** Initial display only: a cache miss must not start a request before the explicit refresh. */
+internal fun EsjzoneClient.getCachedForumPost(
+    authorization: Authorization,
+    topic: ForumTopic
+): ForumPost? {
+    val targetUrl = EsjzoneUrls.resolve(topic.url).substringBefore('#')
+    val cacheKey = pageCacheKey(authorization, targetUrl)
+    val html = PageCache.readStale(cacheKey) ?: return null
+    if (!PageResponsePolicy.validate(200, html, targetUrl, kind = PageKind.COMMUNITY).trusted) return null
+    return parseForumPost(Jsoup.parse(html, targetUrl), topic).also {
+        CacheDiagnostics.record(CacheEventType.HIT, CacheLayer.PAGE, CacheEventReason.DISK, cacheKey)
+    }
+}
 
 fun EsjzoneClient.getForumPost(
     authorization: Authorization,
@@ -852,18 +921,19 @@ private fun parseForumTopicRow(row: JsonObject, fallbackBoardId: String): ForumT
         subjectDocument.body().text().trim()
     }
     if (subjectText.isBlank()) return null
-    val authorCell = row.stringValue("cdate", "author")
-    val statsCell = row.stringValue("vtimes", "stats")
+    val authorCell = row.stringValue("cdate", "author")?.parseForumCell()
+    val statsCell = row.stringValue("vtimes", "stats")?.parseForumCell()
     return ForumTopic(
         boardId = match.groupValues[1].ifBlank { fallbackBoardId },
         id = match.groupValues[2],
         title = subjectText,
-        author = authorCell?.htmlCellMainText(),
-        createdAt = authorCell?.htmlCellDescription(),
-        replyCount = statsCell?.htmlCellMainText()?.toIntOrNull(),
-        viewCount = statsCell?.htmlCellDescription()?.toIntOrNull(),
+        author = authorCell?.mainText,
+        createdAt = authorCell?.description,
+        replyCount = statsCell?.mainText?.toIntOrNull(),
+        viewCount = statsCell?.description?.toIntOrNull(),
         lastReplyAt = row.stringValue("last_reply", "lastReply")
-            ?.htmlCellMainText()
+            ?.parseForumCell()
+            ?.mainText
             ?.takeIf { it.isNotBlank() },
         url = rawUrl
     )
@@ -877,17 +947,18 @@ private fun JsonElement.asSafeString(): String? = runCatching {
     if (isJsonNull || !isJsonPrimitive) null else asString
 }.getOrNull()
 
-private fun String.htmlCellMainText(): String {
-    val body = Jsoup.parseBodyFragment(this).body()
-    body.select(".forum-desc").remove()
-    return body.text().trim().takeIf { it.isNotBlank() }.orEmpty()
-}
+private data class ParsedForumCell(val mainText: String, val description: String?)
 
-private fun String.htmlCellDescription(): String? = Jsoup.parseBodyFragment(this).body()
-    .selectFirst(".forum-desc")
-    ?.text()
-    ?.trim()
-    ?.takeIf { it.isNotBlank() }
+private fun String.parseForumCell(): ParsedForumCell {
+    val body = Jsoup.parseBodyFragment(this).body()
+    val description = body.selectFirst(".forum-desc")
+        ?.text()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    body.select(".forum-desc").remove()
+    val mainText = body.text().trim().takeIf { it.isNotBlank() }.orEmpty()
+    return ParsedForumCell(mainText = mainText, description = description)
+}
 
 private fun Element.mainCellText(): String? {
     return clone().apply { select(".forum-desc").remove() }

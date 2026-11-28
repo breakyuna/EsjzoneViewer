@@ -4,6 +4,7 @@ import com.breakyuna.esjzone.data.reader.withStructuredBody
 import com.breakyuna.esjzone.data.reader.ChapterBody
 import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.novellibrary.component.IMAGE_URL_ATTRIBUTES
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
@@ -11,9 +12,27 @@ import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
 import java.io.IOException
 import java.nio.charset.Charset
 import org.jsoup.Jsoup
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal const val MAX_BROWSER_CHAPTER_HTML_BYTES = 4 * 1024 * 1024
+
+internal fun isWenkuImageHost(host: String): Boolean {
+    val normalized = host.trim().lowercase().trimEnd('.')
+    return normalized == "wenku8.net" ||
+        (normalized.length > ".wenku8.net".length && normalized.endsWith(".wenku8.net")) ||
+        normalized == "wenku8.com" ||
+        (normalized.length > ".wenku8.com".length && normalized.endsWith(".wenku8.com"))
+}
+
+internal fun isAllowedWenkuImageUrl(url: HttpUrl): Boolean =
+    url.isHttps &&
+        url.username.isEmpty() &&
+        url.password.isEmpty() &&
+        isWenkuImageHost(url.host)
+
+internal fun isAllowedWenkuImageUrl(rawUrl: String?): Boolean =
+    rawUrl?.toHttpUrlOrNull()?.let(::isAllowedWenkuImageUrl) == true
 
 class ExternalChapterParseException : IOException("External chapter content could not be recognized")
 class UnsupportedExternalChapterException : IOException("Unsupported external chapter")
@@ -56,11 +75,17 @@ internal object ExternalChapterHtml {
             }
         }
         content.select("img").forEach { image ->
-            val raw = image.attr("src")
-            val resolved = EsjzoneUrls.resolve(raw, url)
-            if (resolved.toHttpUrlOrNull()?.let { it.isHttps && it.host == "www.wenku8.net" &&
-                    it.username.isEmpty() && it.password.isEmpty() } == true) image.attr("src", resolved)
-            else image.remove()
+            val resolved = IMAGE_URL_ATTRIBUTES.asSequence()
+                .map { image.attr(it).trim() }
+                .filterNot { it.startsWith('#') }
+                .map { EsjzoneUrls.resolve(it, url) }
+                .firstOrNull { isAllowedWenkuImageUrl(it) }
+            if (resolved == null) {
+                image.remove()
+            } else {
+                IMAGE_URL_ATTRIBUTES.forEach(image::removeAttr)
+                image.attr("src", resolved)
+            }
         }
         if (content.text().trim().length < 20 && content.select("img").isEmpty()) {
             throw ExternalChapterParseException()

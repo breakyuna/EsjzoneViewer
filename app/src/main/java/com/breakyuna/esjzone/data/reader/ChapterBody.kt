@@ -49,9 +49,74 @@ data class ChapterBody(
     }
 
     fun validate(): ChapterBody = apply {
-        require(schemaVersion == 2 && parserVersion > 0 && blocks.isNotEmpty()) { "Unsupported chapter format" }
-        readerBlocks() // Validate all type/style discriminators before publication.
-        require(fingerprint == digest(blocks) && textLength == length(blocks)) { "Invalid chapter content" }
+        require(schemaVersion == 2 && parserVersion > 0 && textLength >= 0 && isValidFingerprint(fingerprint)) {
+            "Unsupported chapter format"
+        }
+        val rawBlocks: List<StoredBlock?>? = blocks
+        require(!rawBlocks.isNullOrEmpty()) { "Unsupported chapter format" }
+        for (block in rawBlocks) {
+            validateStoredBlock(block)
+        }
+    }
+
+    internal fun validateImportedContent() {
+        validate()
+        require(textLength == length(blocks) && fingerprint == digest(blocks)) { "Invalid chapter content" }
+    }
+
+    private fun isValidFingerprint(value: String?): Boolean {
+        if (value == null || value.length != 64) return false
+        for (i in 0 until value.length) {
+            val ch = value[i]
+            if (ch !in '0'..'9' && ch !in 'a'..'f') return false
+        }
+        return true
+    }
+
+    private fun validateStoredBlock(block: StoredBlock?) {
+        require(block != null) { "Invalid chapter block" }
+        val type: String? = block.type
+        val parts: List<StoredText?>? = block.parts
+        when (type) {
+            "paragraph" -> {
+                require(parts != null) { "Invalid chapter block" }
+                for (part in parts) {
+                    validateStoredText(part)
+                }
+            }
+            "text" -> {
+                require(parts != null && parts.size == 1) { "Invalid chapter block" }
+                validateStoredText(parts[0])
+            }
+            "image" -> require(block.image != null) { "Invalid chapter block" }
+            "break" -> Unit
+            else -> throw IllegalArgumentException("Unsupported chapter block")
+        }
+    }
+
+    private fun validateStoredText(part: StoredText?) {
+        require(part != null) { "Invalid chapter text" }
+        val text: String? = part.text
+        require(text != null) { "Invalid chapter text" }
+        val styles: List<StoredTextStyle?>? = part.styles
+        require(styles != null) { "Invalid chapter text" }
+        for (style in styles) {
+            validateStoredStyle(style)
+        }
+    }
+
+    private fun validateStoredStyle(style: StoredTextStyle?) {
+        require(style != null) { "Invalid chapter style" }
+        val type: String? = style.type
+        val values: List<Int?>? = style.values
+        when (type) {
+            "bold", "italic", "underline", "strike" -> Unit
+            "size" -> require(values != null && values.size == 1 && values[0] != null) { "Invalid chapter style" }
+            "foreground", "background" -> require(
+                values != null && values.size == 3 && values.all { it != null && it in 0..255 }
+            ) { "Invalid chapter style" }
+            else -> throw IllegalArgumentException("Unsupported chapter style")
+        }
     }
 
     internal fun recoverLeadingBreakText(html: String?, baseUrl: String): ChapterBody {

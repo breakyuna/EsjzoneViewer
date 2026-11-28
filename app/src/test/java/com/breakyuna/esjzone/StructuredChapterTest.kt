@@ -1,6 +1,9 @@
 package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.data.reader.ChapterBody
+import com.breakyuna.esjzone.data.reader.StoredBlock
+import com.breakyuna.esjzone.data.reader.StoredText
+import com.breakyuna.esjzone.data.reader.StoredTextStyle
 import com.breakyuna.esjzone.data.repository.toReaderBlocks
 import com.breakyuna.esjzone.domain.reader.*
 import com.breakyuna.esjzone.novellibrary.component.analyseComponents
@@ -43,8 +46,54 @@ class StructuredChapterTest {
     @Test
     fun damagedOrFutureSnapshotIsRejected() {
         val body = ChapterBody.from(listOf(TextComponent("正文")))
-        assertThrows(IllegalArgumentException::class.java) { body.copy(fingerprint = "0".repeat(64)).validate() }
+        // Structural validation does not re-hash blocks when header/structure are valid.
+        val syntheticFingerprint = body.copy(fingerprint = "0".repeat(64))
+        assertSame(syntheticFingerprint, syntheticFingerprint.validate())
+        body.validateImportedContent()
+        assertThrows(IllegalArgumentException::class.java) { syntheticFingerprint.validateImportedContent() }
+        assertThrows(IllegalArgumentException::class.java) {
+            body.copy(textLength = body.textLength + 1).validateImportedContent()
+        }
+        val blankImage = body.copy(blocks = listOf(StoredBlock("image", image = "")))
+        assertSame(blankImage, blankImage.validate())
+
         assertThrows(IllegalArgumentException::class.java) { body.copy(schemaVersion = 3).validate() }
+        assertThrows(IllegalArgumentException::class.java) { body.copy(parserVersion = 0).validate() }
+        assertThrows(IllegalArgumentException::class.java) { body.copy(blocks = emptyList()).validate() }
+        assertThrows(IllegalArgumentException::class.java) { body.copy(fingerprint = "invalid").validate() }
+        assertThrows(IllegalArgumentException::class.java) { body.copy(fingerprint = "A".repeat(64)).validate() }
+        assertThrows(IllegalArgumentException::class.java) { body.copy(textLength = -1).validate() }
+        assertThrows(IllegalArgumentException::class.java) {
+            body.copy(blocks = listOf(StoredBlock("unknown"))).validate()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            body.copy(blocks = listOf(StoredBlock("text", parts = emptyList()))).validate()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            body.copy(blocks = listOf(StoredBlock("image", image = null))).validate()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            body.copy(
+                blocks = listOf(
+                    StoredBlock(
+                        "text",
+                        listOf(StoredText("正文", listOf(StoredTextStyle("foreground", listOf(256, 0, 0)))))
+                    )
+                )
+            ).validate()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            Gson().fromJson(
+                """{"schemaVersion":2,"parserVersion":4,"fingerprint":"${"a".repeat(64)}","textLength":0,"blocks":[{"type":"paragraph"}]}""",
+                ChapterBody::class.java
+            ).validate()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            Gson().fromJson(
+                """{"schemaVersion":2,"parserVersion":4,"fingerprint":"${"a".repeat(64)}","textLength":0,"blocks":[{"type":"text","parts":[{"text":"正文","styles":[{"type":"size","values":[null]}]}]}]}""",
+                ChapterBody::class.java
+            ).validate()
+        }
     }
 
     @Test

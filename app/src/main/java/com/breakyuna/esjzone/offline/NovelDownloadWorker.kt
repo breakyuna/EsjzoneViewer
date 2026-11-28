@@ -62,8 +62,14 @@ data class BackgroundDownloadStatus(
     val waiting: Boolean = false,
     val unlockOnly: Boolean = false,
     val unlockedCount: Int = 0,
-    val failedCount: Int = 0
+    val failedCount: Int = 0,
+    val wenkuVerificationRequired: Boolean = false,
+    val wenkuVerificationUrl: String? = null,
+    val selectedChapterUrls: Set<String>? = null
 )
+
+internal fun findCloudflareChallenge(error: Throwable): CloudflareChallengeRequiredException? =
+    generateSequence(error) { it.cause }.filterIsInstance<CloudflareChallengeRequiredException>().firstOrNull()
 
 /** Compresses large tables of contents to fit WorkManager's 10 KiB input limit. */
 internal object ChapterSelectionCodec {
@@ -196,6 +202,7 @@ object NovelDownloadManager {
         val active = state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED ||
             state == WorkInfo.State.RUNNING
         val total = progress.getInt(NovelDownloadWorker.KEY_TOTAL, 0)
+        val verificationRequired = outputData.getBoolean(NovelDownloadWorker.KEY_WENKU_VERIFICATION_REQUIRED, false)
         val current = if (state == WorkInfo.State.RUNNING && total > 0) {
             DownloadProgress(progress.getInt(NovelDownloadWorker.KEY_COMPLETED, 0), total,
                 progress.getString(NovelDownloadWorker.KEY_CHAPTER).orEmpty())
@@ -212,14 +219,23 @@ object NovelDownloadManager {
             waiting = active && state != WorkInfo.State.RUNNING,
             unlockOnly = UNLOCK_TAG in tags,
             unlockedCount = outputData.getInt(NovelDownloadWorker.KEY_UNLOCKED, 0),
-            failedCount = outputData.getInt(NovelDownloadWorker.KEY_FAILED, 0))
+            failedCount = outputData.getInt(NovelDownloadWorker.KEY_FAILED, 0),
+            wenkuVerificationRequired = verificationRequired,
+            wenkuVerificationUrl = outputData.getString(NovelDownloadWorker.KEY_WENKU_CHAPTER_URL)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() },
+            selectedChapterUrls = if (verificationRequired) selectedChapterUrls(tags) else null
+        )
     }
 
+    internal fun selectedChapterUrls(tags: Set<String>): Set<String>? = tags
+        .firstOrNull { it.startsWith(SELECTION_TAG_PREFIX) }
+        ?.removePrefix(SELECTION_TAG_PREFIX)
+        ?.takeIf(String::isNotEmpty)
+        ?.let(ChapterSelectionCodec::decode)
+
     internal fun restoredProgress(tags: Set<String>, chapters: List<DownloadedChapterRecord>): DownloadProgress? {
-        val encoded = tags.firstOrNull { it.startsWith(SELECTION_TAG_PREFIX) }
-            ?.removePrefix(SELECTION_TAG_PREFIX).orEmpty()
-        val selectedKeys = encoded.takeIf(String::isNotEmpty)?.let(ChapterSelectionCodec::decode)
-            ?.map(NovelDownloadStore::chapterKey)?.toSet()
+        val selectedKeys = selectedChapterUrls(tags)?.map(NovelDownloadStore::chapterKey)?.toSet()
         val targets = chapters.filter {
             (!it.localOnly || UNLOCK_TAG in tags) &&
                 (selectedKeys == null || NovelDownloadStore.chapterKey(it.url) in selectedKeys)
@@ -356,11 +372,15 @@ class NovelDownloadWorker(
             Result.retry()
         } catch (error: Exception) {
             AppLogger.e("NovelDownloadWorker", "Background novel download failed", error)
-            if (generateSequence<Throwable>(error) { it.cause }.any {
-                    it is CloudflareChallengeRequiredException
-                }) {
+            val challenge = findCloudflareChallenge(error)
+            if (challenge != null) {
                 sendWenkuVerificationNotification(name, rawUrl)
-                return@work Result.failure()
+                return@work Result.failure(
+                    workDataOf(
+                        KEY_WENKU_VERIFICATION_REQUIRED to true,
+                        KEY_WENKU_CHAPTER_URL to challenge.chapterUrl.orEmpty()
+                    )
+                )
             }
             if (runAttemptCount < MAX_RETRIES) Result.retry() else {
                 if (unlockOnly) sendResultNotification(rawUrl, applicationContext.getString(
@@ -551,6 +571,8 @@ class NovelDownloadWorker(
         internal const val KEY_COMPLETED = "completed"
         internal const val KEY_TOTAL = "total"
         internal const val KEY_CHAPTER = "chapter"
+        internal const val KEY_WENKU_VERIFICATION_REQUIRED = "wenku_verification_required"
+        internal const val KEY_WENKU_CHAPTER_URL = "wenku_chapter_url"
         private const val MAX_RETRIES = 3
         private const val CHANNEL_ID = "novel_downloads"
     }

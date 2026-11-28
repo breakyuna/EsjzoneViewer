@@ -71,6 +71,7 @@ import com.breakyuna.esjzone.network.EsjzoneUrls
 import com.breakyuna.esjzone.network.LocalAuthorization
 import com.breakyuna.esjzone.network.LoadFailureKind
 import com.breakyuna.esjzone.network.loadFailureKind
+import com.breakyuna.esjzone.network.features.getCachedForumPost
 import com.breakyuna.esjzone.network.features.getForumCategories
 import com.breakyuna.esjzone.network.features.getForumBoard
 import com.breakyuna.esjzone.network.features.getForumPost
@@ -102,6 +103,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 object ForumPage : AppDestination {
@@ -1010,27 +1012,37 @@ private class ForumBoardPageModel(
 ) : AppStateViewModel<CommunityState<com.breakyuna.esjzone.network.features.ForumBoardResult>>(
     CommunityState.Loading
 ) {
+    private var loadJob: Job? = null
     private var loadStarted = false
+    private var loadGeneration = 0L
 
-    fun retry() {
-        loadStarted = false
-        load()
-    }
+    fun retry() = load(forceRefresh = true)
 
-    fun load() {
-        if (loadStarted) return
+    fun load(forceRefresh: Boolean = false) {
+        if (!forceRefresh && loadStarted) return
         loadStarted = true
+        val generation = ++loadGeneration
+        loadJob?.cancel()
         mutableState.value = CommunityState.Loading
-        viewModelScope.launch(Dispatchers.IO) {
+        loadJob = viewModelScope.launch {
             try {
-                mutableState.value = CommunityState.Result(
-                    PresentationAccess.client.getForumBoard(authorization, thread),
-                    isSyncSuccess = true
-                )
+                val board = withContext(Dispatchers.IO) {
+                    PresentationAccess.client.getForumBoard(
+                        authorization,
+                        thread,
+                        forceRefresh = forceRefresh,
+                        allowStaleOnError = !forceRefresh
+                    )
+                }
+                if (generation != loadGeneration) return@launch
+                mutableState.value = CommunityState.Result(board, isSyncSuccess = true)
             } catch (error: CancellationException) {
-                mutableState.value = CommunityState.Error(LoadFailureKind.NETWORK)
+                if (generation == loadGeneration) {
+                    mutableState.value = CommunityState.Error(LoadFailureKind.NETWORK)
+                }
                 throw error
             } catch (error: Exception) {
+                if (generation != loadGeneration) return@launch
                 AppLogger.e(
                     "ForumBoardPageModel",
                     "Failed to load forum board ${thread.id}",
@@ -1038,7 +1050,7 @@ private class ForumBoardPageModel(
                 )
                 mutableState.value = CommunityState.Error(error.loadFailureKind())
             } finally {
-                loadStarted = false
+                if (generation == loadGeneration) loadStarted = false
             }
         }
     }
@@ -1063,11 +1075,7 @@ private class ForumPostPageModel(
             val currentResult = mutableState.value as? CommunityState.Result
             val cachedPost = if (!forceRefresh && currentResult == null) {
                 runCatching {
-                    PresentationAccess.client.getForumPost(
-                        authorization,
-                        topic,
-                        forceRefresh = false
-                    )
+                    PresentationAccess.client.getCachedForumPost(authorization, topic)
                 }.getOrNull()
             } else null
 
@@ -1090,6 +1098,7 @@ private class ForumPostPageModel(
                     forceRefresh = true
                 )
                 ensureActive()
+                if (generation != loadGeneration) return@launch
                 mutableState.value = CommunityState.Result(
                     data = freshPost,
                     isSyncSuccess = true,

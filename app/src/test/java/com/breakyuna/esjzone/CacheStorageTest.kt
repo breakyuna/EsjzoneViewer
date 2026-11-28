@@ -8,6 +8,7 @@ import com.breakyuna.esjzone.network.features.HomeDataCache
 import com.breakyuna.esjzone.network.features.HistoryDataCache
 import java.io.File
 import java.nio.file.Files
+import okio.ByteString.Companion.encodeUtf8
 import okio.Path.Companion.toOkioPath
 import org.junit.Assert.*
 import org.junit.Test
@@ -27,8 +28,9 @@ class CacheStorageTest {
         assertTrue(removed.isEmpty())
     }
 
-    private fun imageCache(directory: File) = CacheImageDiskCache(DiskCache.Builder()
-        .directory(directory.toOkioPath()).maxSizeBytes(Long.MAX_VALUE).build())
+    private fun imageCache(directory: File, maxSizeBytes: Long = 16L * 1024L * 1024L) =
+        CacheImageDiskCache(DiskCache.Builder()
+            .directory(directory.toOkioPath()).maxSizeBytes(maxSizeBytes).build())
 
     @Test
     fun capacityEvictionWaitsForImageReadersAndWriters() {
@@ -76,5 +78,38 @@ class CacheStorageTest {
             assertTrue(HomeDataCache.storageEntries().isEmpty())
             assertTrue(HistoryDataCache.storageEntries().isEmpty())
         } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun reclaimCacheEntriesPurgesAlreadyEvictedImagesWithoutCountingPhantomBytes() {
+        val directory = Files.createTempDirectory("shared-image-native-evict-").toFile()
+        val disk = DiskCache.Builder().directory(directory.toOkioPath()).maxSizeBytes(16L * 1024L * 1024L).build()
+        val cache = CacheImageDiskCache(disk)
+        try {
+            fun put(key: String, payload: String) {
+                val editor = requireNotNull(cache.openEditor(key))
+                File(editor.metadata.toString()).writeText("metadata")
+                File(editor.data.toString()).writeText(payload)
+                editor.commit()
+            }
+            put("evicted-by-coil", "old-image-payload")
+            put("retained", "active-image-payload")
+            assertEquals(2, cache.entryCount)
+
+            assertTrue(disk.remove("evicted-by-coil".encodeUtf8().sha256().hex()))
+            requireNotNull(cache.openSnapshot("retained")).use {
+                val entries = cache.storageEntries()
+                val totalBytes = entries.sumOf { it.sizeBytes }
+                assertEquals(2, entries.size)
+                assertEquals(totalBytes, reclaimCacheEntries(entries, totalBytes, 0L))
+            }
+            assertEquals(1, cache.entryCount)
+            requireNotNull(cache.openSnapshot("retained")).use {
+                assertEquals("active-image-payload", File(it.data.toString()).readText())
+            }
+        } finally {
+            cache.shutdown()
+            directory.deleteRecursively()
+        }
     }
 }

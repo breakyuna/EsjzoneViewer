@@ -75,7 +75,8 @@ object ReaderScriptConverter {
         checkCancelled: () -> Unit = {}
     ): ReaderScriptSnapshot {
         checkCancelled()
-        val needsTransform = script != ReaderScript.ORIGINAL || ReaderNameReplace.isActive(nameReplace)
+        val namesActive = ReaderNameReplace.isActive(nameReplace)
+        val needsTransform = script != ReaderScript.ORIGINAL || namesActive
         val reusable = previous?.takeIf { it.script == script && it.nameReplace == nameReplace }
         val result = HashMap<String, String>()
         val blocks = HashMap<ReaderBlock, ReaderTextOffsets>()
@@ -85,27 +86,59 @@ object ReaderScriptConverter {
                 result[value] = reusable?.values?.get(value) ?: ReaderNameReplace.apply(convert(value, script), nameReplace)
             }
         }
+        fun mapLeaf(value: String): ReaderTextOffsets {
+            val scriptOffsets = mapping(value, script)
+            return if (namesActive) ReaderNameReplace.mapping(scriptOffsets, nameReplace) else scriptOffsets
+        }
         documents.forEach { document ->
             checkCancelled()
             if (needsTransform) add(document.chapter.name)
             document.blocks.forEach { block ->
                 checkCancelled()
-                if (needsTransform) {
+                val cachedOffsets = reusable?.blockMappings?.get(block)
+                val offsets = if (cachedOffsets != null) {
+                    if (needsTransform) {
+                        when (block) {
+                            is ReaderBlock.Paragraph -> block.parts.forEach { part ->
+                                add(part.value)
+                                add(part.ruby?.reading)
+                            }
+                            is ReaderBlock.Text -> {
+                                add(block.value)
+                                add(block.ruby?.reading)
+                            }
+                            else -> Unit
+                        }
+                    }
+                    cachedOffsets
+                } else if (needsTransform) {
                     when (block) {
-                        is ReaderBlock.Paragraph -> block.parts.forEach { part ->
-                            add(part.value)
-                            add(part.ruby?.reading)
+                        is ReaderBlock.Paragraph -> {
+                            val partMappings = block.parts.map { part ->
+                                checkCancelled()
+                                val partOffsets = mapLeaf(part.value)
+                                if (part.value.isNotEmpty() && part.value !in result) {
+                                    result[part.value] = partOffsets.text
+                                }
+                                add(part.ruby?.reading)
+                                partOffsets
+                            }
+                            val transformed = ReaderTextOffsets.join(partMappings)
+                            readerUnindentedOffsets(transformed.text, transformed)
                         }
                         is ReaderBlock.Text -> {
-                            add(block.value)
+                            val transformed = mapLeaf(block.value)
+                            if (block.value.isNotEmpty() && block.value !in result) {
+                                result[block.value] = transformed.text
+                            }
                             add(block.ruby?.reading)
+                            readerUnindentedOffsets(transformed.text, transformed)
                         }
-                        else -> Unit
+                        else -> {
+                            val transformed = blockMapping(block, script)
+                            readerUnindentedOffsets(transformed.text, transformed)
+                        }
                     }
-                }
-                val offsets = reusable?.blockMappings?.get(block) ?: if (needsTransform) {
-                    val transformed = untrimmedBlockMapping(block, script, nameReplace)
-                    readerUnindentedOffsets(transformed.text, transformed)
                 } else {
                     readerUnindentedOffsets(block.sourceText())
                 }

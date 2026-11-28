@@ -6,6 +6,7 @@ import com.breakyuna.esjzone.data.reader.analyseChapterContent
 import com.breakyuna.esjzone.data.reader.extractBlocksContentSnapshot
 import com.breakyuna.esjzone.data.reader.extractDomContentSnapshot
 import com.breakyuna.esjzone.data.reader.isContentConserved
+import com.breakyuna.esjzone.data.reader.parseLosslessFallbackBlocks
 import com.breakyuna.esjzone.domain.reader.ReaderAnchor
 import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
@@ -49,12 +50,15 @@ class ChapterContentIntegrityTest {
         val html = "<br><br>第一段正文内容<br>第二段正文内容<details><summary>作者的话</summary>附言内容</details>"
         val container = Jsoup.parseBodyFragment(html, "https://www.esjzone.cc/forum/1/101.html").body()
 
-        // Deliberately drop the opening prose in the primary parser to verify conservation fallback.
+        val normal = analyseChapterContent(container)
+        assertFalse(normal.degraded)
+        assertTrue(isContentConserved(extractDomContentSnapshot(container), extractBlocksContentSnapshot(normal.blocks)))
+
+        // Returning empty blocks for non-empty DOM triggers lossless fallback.
         val recovered = analyseChapterContent(container) {
-            val onlyNote = listOf(ReaderBlock.LineBreak, ReaderBlock.Text("作者的话附言内容"))
             ParsedChapterContent(
-                components = ChapterBody.fromBlocks(onlyNote).components(),
-                blocks = onlyNote,
+                components = emptyList(),
+                blocks = emptyList(),
                 formatting = ReaderChapterFormatting(parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION)
             )
         }
@@ -68,10 +72,21 @@ class ChapterContentIntegrityTest {
         assertTrue(joined.contains("第一段正文内容"))
         assertTrue(joined.contains("第二段正文内容"))
         assertTrue(joined.contains("附言内容"))
+
+        val ignoredOnly = Jsoup.parseBodyFragment("<div><noscript>ignored</noscript>   </div>").body()
+        val emptyParsed = analyseChapterContent(ignoredOnly) {
+            ParsedChapterContent(
+                components = emptyList(),
+                blocks = emptyList(),
+                formatting = ReaderChapterFormatting(parserVersion = ReaderChapterFormatting.CURRENT_PARSER_VERSION)
+            )
+        }
+        assertFalse(emptyParsed.degraded)
+        assertTrue(emptyParsed.blocks.isEmpty())
     }
 
     @Test
-    fun primaryExceptionFallsBackAndLogsTheConservationRecheck() {
+    fun primaryExceptionFallsBackAndLogsTheFailure() {
         val container = Jsoup.parseBodyFragment(
             """<p>前<ruby><span>漢<img src="/ruby.png">字</span><rt>かんじ</rt></ruby>后</p>""",
             "https://www.esjzone.cc/forum/1/2.html"
@@ -87,8 +102,22 @@ class ChapterContentIntegrityTest {
         assertTrue(isContentConserved(extractDomContentSnapshot(container), extractBlocksContentSnapshot(parsed.blocks)))
         assertTrue(AppLogger.logsFlow.value.any {
             it.id > previousLogId && it.tag == "ChapterIntegrity" &&
-                it.message == "Lossless fallback passed content conservation"
+                it.message == "Rich parser failed (IllegalStateException); switching to lossless fallback"
         })
+    }
+
+    @Test
+    fun rubyWithAnInlineImageKeepsReadingOutOfBodyText() {
+        val container = Jsoup.parseBodyFragment(
+            """<p style="text-align:center">前<ruby><b>漢<img src="/ruby.png">字</b><rt>かんじ</rt></ruby>后</p>""",
+            "https://www.esjzone.cc/forum/1/2.html"
+        ).body()
+        val parsed = analyseChapterContent(container)
+
+        assertFalse(parsed.degraded)
+        assertEquals(listOf("前漢", "", "字后"), parsed.blocks.map { it.sourceText() })
+        assertEquals("center", parsed.formatting.alignments[0])
+        assertTrue(isContentConserved(extractDomContentSnapshot(container), extractBlocksContentSnapshot(parsed.blocks)))
     }
 
     @Test
@@ -108,19 +137,17 @@ class ChapterContentIntegrityTest {
         val misplaced = listOf(ReaderBlock.Text("前文后文"), image)
 
         assertFalse(isContentConserved(extractDomContentSnapshot(container), extractBlocksContentSnapshot(misplaced)))
-        val parsed = analyseChapterContent(container) {
-            ParsedChapterContent(emptyList(), misplaced, ReaderChapterFormatting())
-        }
-
-        assertTrue(parsed.degraded)
-        assertEquals(
-            listOf(
-                ReaderBlock.Paragraph(listOf(ReaderBlock.Text("前文"))),
-                image,
-                ReaderBlock.Paragraph(listOf(ReaderBlock.Text("后文")))
-            ),
-            parsed.blocks
+        val parsed = analyseChapterContent(container)
+        val expectedBlocks = listOf(
+            ReaderBlock.Paragraph(listOf(ReaderBlock.Text("前文"))),
+            image,
+            ReaderBlock.Paragraph(listOf(ReaderBlock.Text("后文")))
         )
+
+        assertFalse(parsed.degraded)
+        assertTrue(isContentConserved(extractDomContentSnapshot(container), extractBlocksContentSnapshot(parsed.blocks)))
+        assertEquals(expectedBlocks, parsed.blocks)
+        assertEquals(expectedBlocks, parseLosslessFallbackBlocks(container))
     }
 
     @Test

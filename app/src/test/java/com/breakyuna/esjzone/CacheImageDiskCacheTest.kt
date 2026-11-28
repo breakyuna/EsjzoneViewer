@@ -11,8 +11,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CacheImageDiskCacheTest {
-    private fun delegate(directory: File) = DiskCache.Builder()
-        .directory(directory.toOkioPath()).maxSizeBytes(Long.MAX_VALUE).build()
+    private fun delegate(directory: File, maxSizeBytes: Long = 16L * 1024L * 1024L) = DiskCache.Builder()
+        .directory(directory.toOkioPath()).maxSizeBytes(maxSizeBytes).build()
 
     private fun write(cache: DiskCache, key: String, value: String) {
         val editor = requireNotNull(cache.openEditor(key))
@@ -124,6 +124,145 @@ class CacheImageDiskCacheTest {
             cache = CacheImageDiskCache(delegate(directory))
             assertNull(cache.openSnapshot("one"))
             assertNull(cache.openSnapshot("pending"))
+        } finally { cache.shutdown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun coldStartDoesNotScanSnapshotsOrWipeCacheOnMissingIndexOrSizeMismatch() {
+        val directory = Files.createTempDirectory("image-index-cold-start-").toFile()
+        var cache = CacheImageDiskCache(delegate(directory))
+        val index = File(directory, "cache-keys-v1")
+        try {
+            write(cache, "one", "first")
+            write(cache, "two", "second")
+            cache.shutdown()
+
+            // Introduce a byte-count mismatch in cache-keys-v1 and verify cold start neither opens snapshots nor wipes.
+            val idOne = "one".encodeUtf8().sha256().hex()
+            val idTwo = "two".encodeUtf8().sha256().hex()
+            index.writeText("$idOne 1000 1\n$idTwo 2000 999999\n")
+
+            val disk = delegate(directory)
+            var openSnapshotCalls = 0
+            val spyDisk = object : DiskCache by disk {
+                override fun openSnapshot(key: String): DiskCache.Snapshot? {
+                    openSnapshotCalls++
+                    return disk.openSnapshot(key)
+                }
+            }
+            cache = CacheImageDiskCache(spyDisk)
+            assertEquals(2, cache.entryCount)
+            assertTrue(cache.storageSizeBytes > 0L)
+            assertEquals(0, openSnapshotCalls)
+            requireNotNull(cache.openSnapshot("one")).use {
+                assertEquals("first", File(it.data.toString()).readText())
+            }
+            requireNotNull(cache.openSnapshot("two")).use {
+                assertEquals("second", File(it.data.toString()).readText())
+            }
+            cache.shutdown()
+
+            // Missing index must not wipe healthy images on disk.
+            assertTrue(index.delete())
+            cache = CacheImageDiskCache(delegate(directory))
+            assertEquals(0, cache.entryCount)
+            requireNotNull(cache.openSnapshot("one")).use {
+                assertEquals("first", File(it.data.toString()).readText())
+            }
+            requireNotNull(cache.openSnapshot("two")).use {
+                assertEquals("second", File(it.data.toString()).readText())
+            }
+            assertEquals(2, cache.entryCount)
+            cache.shutdown()
+
+            // Corrupt index content must not wipe healthy images on disk.
+            index.writeText("corrupt-line\nbroken 123\n")
+            cache = CacheImageDiskCache(delegate(directory))
+            requireNotNull(cache.openSnapshot("one")).use {
+                assertEquals("first", File(it.data.toString()).readText())
+            }
+            requireNotNull(cache.openSnapshot("two")).use {
+                assertEquals("second", File(it.data.toString()).readText())
+            }
+        } finally { cache.shutdown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun corruptSingleEntryIsRemovedLocallyWithoutWipingHealthyEntries() {
+        val directory = Files.createTempDirectory("image-index-corrupt-entry-").toFile()
+        val disk = delegate(directory)
+        val corruptId = "corrupt".encodeUtf8().sha256().hex()
+        val failingDisk = object : DiskCache by disk {
+            override fun openSnapshot(key: String): DiskCache.Snapshot? {
+                if (key == corruptId) throw IOException("Corrupt snapshot entry")
+                return disk.openSnapshot(key)
+            }
+        }
+        val cache = CacheImageDiskCache(failingDisk)
+        try {
+            write(cache, "healthy", "good-image")
+            write(cache, "corrupt", "bad-image")
+            assertEquals(2, cache.entryCount)
+
+            assertNull(cache.openSnapshot("corrupt"))
+            assertEquals(1, cache.entryCount)
+            assertNull(disk.openSnapshot(corruptId))
+
+            requireNotNull(cache.openSnapshot("healthy")).use {
+                assertEquals("good-image", File(it.data.toString()).readText())
+            }
+        } finally { cache.shutdown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun quotaReclaimsUnindexedImagesWithCoilLruAfterActiveEditsClose() {
+        val directory = Files.createTempDirectory("image-index-quota-").toFile()
+        var cache = CacheImageDiskCache(delegate(directory))
+        try {
+            write(cache, "older", "old image")
+            write(cache, "newer", "new image")
+            cache.shutdown()
+            assertTrue(File(directory, "cache-keys-v1").delete())
+
+            cache = CacheImageDiskCache(delegate(directory))
+            val originalSize = cache.size
+            val editor = requireNotNull(cache.openEditor("pending"))
+            assertNull(cache.reclaimUnindexedBytes(1L))
+            assertEquals(originalSize, cache.size)
+            editor.abort()
+
+            assertTrue(requireNotNull(cache.reclaimUnindexedBytes(1L)) > 0L)
+            assertNull(cache.openSnapshot("older"))
+            requireNotNull(cache.openSnapshot("newer")).use {
+                assertEquals("new image", File(it.data.toString()).readText())
+            }
+        } finally { cache.shutdown(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun nativeCoilEvictionCleansStaleIndexEntryWithoutWipingOtherEntries() {
+        val directory = Files.createTempDirectory("image-index-native-evict-").toFile()
+        val disk = delegate(directory)
+        val cache = CacheImageDiskCache(disk)
+        try {
+            write(cache, "evicted-on-read", "first")
+            write(cache, "evicted-on-trim", "second")
+            write(cache, "retained", "third")
+            assertEquals(3, cache.entryCount)
+
+            assertTrue(disk.remove("evicted-on-read".encodeUtf8().sha256().hex()))
+            assertNull(cache.openSnapshot("evicted-on-read"))
+            assertEquals(2, cache.entryCount)
+
+            assertTrue(disk.remove("evicted-on-trim".encodeUtf8().sha256().hex()))
+            requireNotNull(cache.openSnapshot("retained")).use {
+                cache.storageEntries().forEach { it.remove() }
+            }
+            assertEquals(1, cache.entryCount)
+
+            requireNotNull(cache.openSnapshot("retained")).use {
+                assertEquals("third", File(it.data.toString()).readText())
+            }
         } finally { cache.shutdown(); directory.deleteRecursively() }
     }
 }

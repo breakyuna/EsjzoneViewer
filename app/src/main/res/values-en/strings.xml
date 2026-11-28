@@ -1014,7 +1014,6 @@
     <string name="reader_glow_outer_alpha">Outer two layers alpha</string>
     <string name="reader_glow_custom_color">Custom glow color</string>
     <string name="reader_glow_auto_clamp">Automatic lightness adjustment</string>
-    <string name="reader_restore_position_failed">Unable to restore reading position</string>
     <string name="session_storage_unavailable">Secure storage is unavailable. Your login cannot be saved; you will need to sign in again after restarting the app.</string>
     <string name="member_system_messages">System messages</string>
     <string name="member_replies">My replies</string>

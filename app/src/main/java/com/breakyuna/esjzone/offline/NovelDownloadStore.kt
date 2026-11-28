@@ -21,6 +21,7 @@ import com.breakyuna.esjzone.network.features.ChapterPasswordRejectedException
 import com.breakyuna.esjzone.network.features.getChapterDetail
 import com.breakyuna.esjzone.network.features.isPasswordProtectedChapterHtml
 import com.breakyuna.esjzone.network.features.unlockPasswordProtectedChapter
+import com.breakyuna.esjzone.novellibrary.component.IMAGE_URL_ATTRIBUTES
 import com.breakyuna.esjzone.novellibrary.component.ChapterItem
 import com.breakyuna.esjzone.novellibrary.component.Component
 import com.breakyuna.esjzone.novellibrary.component.ImageComponent
@@ -652,7 +653,7 @@ object NovelDownloadStore {
                         if (file.isFile) {
                             val chapter = requireNotNull(readJson(file, DownloadedChapterContent::class.java))
                             require(chapter.schemaVersion in 0..2)
-                            if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validate()
+                            if (chapter.schemaVersion == 2) requireNotNull(chapter.body).validateImportedContent()
                         }
                     }
                 }
@@ -1630,7 +1631,9 @@ object NovelDownloadStore {
             }
 
             if (failedErrors.isNotEmpty()) {
-                val firstError = failedErrors.peek()
+                val firstError = failedErrors.firstOrNull {
+                    it is com.breakyuna.esjzone.network.external.CloudflareChallengeRequiredException
+                } ?: failedErrors.peek()
                 throw IllegalStateException(
                     "Failed to download ${failedErrors.size} chapter(s) for novel: ${novel.name}",
                     firstError
@@ -2935,14 +2938,4 @@ object NovelDownloadStore {
     )
 
     private const val MAX_IMAGE_BYTES = 32L * 1024L * 1024L
-    private val IMAGE_URL_ATTRIBUTES = listOf(
-        "data-src",
-        "data-original",
-        "data-lazy-src",
-        "data-actualsrc",
-        "data-url",
-        "data-origin",
-        "data-file",
-        "src"
-    )
 }

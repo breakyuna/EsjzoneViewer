@@ -19,6 +19,7 @@ import com.breakyuna.esjzone.ui.reader.restoreReaderPosition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -176,6 +177,44 @@ class ReaderContentPositionTest {
         seek.join()
         assertTrue(seek.isCancelled)
         assertFalse(fallbackCalled)
+    }
+
+    @Test
+    fun exactRestoreTimeoutFallsBackToParagraphRestore() = runBlocking {
+        var fallbackCalled = false
+        val restored = restoreReaderPosition(
+            exact = {
+                delay(2_000L)
+                true
+            },
+            fallback = {
+                fallbackCalled = true
+                true
+            }
+        )
+        assertTrue(restored)
+        assertTrue(fallbackCalled)
+    }
+
+    @Test
+    fun restoreCompletesWithinBoundedTimeWhenBothExactAndFallbackTimeOut() = runBlocking {
+        var fallbackCalled = false
+        val startedMs = System.nanoTime() / 1_000_000
+        val restored = restoreReaderPosition(
+            exact = {
+                delay(2_000L)
+                true
+            },
+            fallback = {
+                fallbackCalled = true
+                delay(2_000L)
+                true
+            }
+        )
+        val elapsedMs = System.nanoTime() / 1_000_000 - startedMs
+        assertFalse(restored)
+        assertTrue(fallbackCalled)
+        assertTrue("Expected bounded timeout < 1500 ms, was $elapsedMs ms", elapsedMs < 1_500L)
     }
 
     @Test

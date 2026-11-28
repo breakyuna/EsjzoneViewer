@@ -172,4 +172,49 @@ class ReaderNameReplaceTest {
         val value = settings(ReaderNameReplaceRule(source = "^(a+)+$", target = "bad", regex = true))
         assertEquals(text, ReaderNameReplace.apply(text, value))
     }
+
+    @Test
+    fun largeLiteralRuleSetOnLongTextDoesNotAbortAllRules() {
+        val rules = (0 until 100).map { i ->
+            ReaderNameReplaceRule(source = "CharName$i", target = "Alias$i")
+        }
+        val text = "x".repeat(60_000) + " CharName0 and CharName99"
+        val expected = "x".repeat(60_000) + " Alias0 and Alias99"
+        val value = ReaderNameReplaceSettings(enabled = true, rules = rules)
+        assertEquals(expected, ReaderNameReplace.apply(text, value))
+        val mapped = ReaderNameReplace.mapping(ReaderTextOffsets.identity(text), value)
+        assertEquals(expected, mapped.text)
+        assertEquals(text.length, mapped.sourceLength)
+        assertEquals(text.indexOf("CharName99"), mapped.toSource(expected.indexOf("Alias99")))
+    }
+
+    @Test
+    fun perRuleOutputRollbackIsolatesOffendingRuleWhileOtherRulesApply() {
+        val text = "Bob " + "a".repeat(128) + " Carol"
+        val value = settings(
+            ReaderNameReplaceRule(source = "a", target = "b".repeat(4096)),
+            ReaderNameReplaceRule(source = "Bob", target = "B"),
+            ReaderNameReplaceRule(source = "Carol", target = "C")
+        )
+        val expected = "B " + "a".repeat(128) + " C"
+        assertEquals(expected, ReaderNameReplace.apply(text, value))
+        val mapped = ReaderNameReplace.mapping(ReaderTextOffsets.identity(text), value)
+        assertEquals(expected, mapped.text)
+        assertEquals(text.indexOf("Carol"), mapped.toSource(expected.indexOf("C")))
+    }
+
+    @Test
+    fun perRuleMatchCapIsolatesOffendingRuleWhileOtherRulesApply() {
+        val text = "a".repeat(4200) + "Bob"
+        val value = settings(
+            ReaderNameReplaceRule(source = "a", target = "x"),
+            ReaderNameReplaceRule(source = "Bob", target = "B")
+        )
+        val expected = "x".repeat(4096) + "a".repeat(4200 - 4096) + "B"
+        assertEquals(expected, ReaderNameReplace.apply(text, value))
+        val mapped = ReaderNameReplace.mapping(ReaderTextOffsets.identity(text), value)
+        assertEquals(expected, mapped.text)
+        assertEquals(4200, mapped.toSource(expected.length - 1))
+        assertEquals(4203, mapped.toSourceEnd(expected.length))
+    }
 }

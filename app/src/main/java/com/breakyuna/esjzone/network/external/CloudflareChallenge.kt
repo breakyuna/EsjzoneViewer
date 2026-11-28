@@ -3,7 +3,8 @@ package com.breakyuna.esjzone.network.external
 import java.io.IOException
 import org.jsoup.Jsoup
 
-class CloudflareChallengeRequiredException : IOException("Site security verification is required")
+class CloudflareChallengeRequiredException(val chapterUrl: String? = null) :
+    IOException("Site security verification is required")
 class CloudflareWebViewUnavailableException(cause: Throwable? = null) :
     IOException("Android System WebView is unavailable", cause)
 class WenkuCookieStoreUnavailableException : IOException("Wenku cookie storage is unavailable")

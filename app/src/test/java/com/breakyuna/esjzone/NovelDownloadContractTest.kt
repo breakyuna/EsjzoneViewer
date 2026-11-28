@@ -1,12 +1,16 @@
 package com.breakyuna.esjzone
 
+import com.breakyuna.esjzone.network.external.CloudflareChallengeRequiredException
+import com.breakyuna.esjzone.offline.BackgroundDownloadStatus
 import com.breakyuna.esjzone.offline.ChapterSelectionCodec
 import com.breakyuna.esjzone.offline.DownloadProgress
 import com.breakyuna.esjzone.offline.DownloadedChapterRecord
 import com.breakyuna.esjzone.offline.DownloadedNovelManifest
 import com.breakyuna.esjzone.offline.NovelDownloadManager
 import com.breakyuna.esjzone.offline.NovelDownloadStore
+import com.breakyuna.esjzone.offline.findCloudflareChallenge
 import com.google.gson.Gson
+import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -26,6 +30,7 @@ class NovelDownloadContractTest {
         val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
         val fullTags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 3,
             NovelDownloadManager.SELECTION_TAG_PREFIX)
+        assertNull(NovelDownloadManager.selectedChapterUrls(fullTags))
         assertEquals(DownloadProgress(2, 3, ""), NovelDownloadManager.restoredProgress(fullTags, chapters))
         assertEquals(DownloadProgress(3, 3, ""),
             NovelDownloadManager.restoredProgress(fullTags, chapters.map { it.copy(downloaded = true) }))
@@ -52,6 +57,7 @@ class NovelDownloadContractTest {
         val selected = setOf("https://www.esjzone.one/forum/9001/1.html", "/forum/9001/3.html")
         val tags = setOf(NovelDownloadManager.TOTAL_TAG_PREFIX + 2,
             NovelDownloadManager.SELECTION_TAG_PREFIX + ChapterSelectionCodec.encode(selected))
+        assertEquals(selected, NovelDownloadManager.selectedChapterUrls(tags))
         val chapters = listOf(progressRecord(1, true), progressRecord(2, true), progressRecord(3, false))
         assertEquals(DownloadProgress(1, 2, ""), NovelDownloadManager.restoredProgress(tags, chapters))
     }
@@ -179,5 +185,34 @@ class NovelDownloadContractTest {
         assertFalse(legacy.chapters.first().requiresPassword)
         assertTrue(legacy.pendingPasswordChapters.isEmpty())
         assertNull(legacy.commonPassword)
+    }
+
+    @Test
+    fun cloudflareChallengeDetection_unwrapsNestedCausesAndExposesStatusDefaults() {
+        val challengeUrl = "https://www.wenku8.net/novel/1/2/3.htm"
+        val direct = CloudflareChallengeRequiredException(challengeUrl)
+        val wrapped = IllegalStateException("download failed", IOException("outer", direct))
+        val nonCf = IllegalStateException("download failed", IOException("timeout"))
+
+        assertEquals(direct, findCloudflareChallenge(direct))
+        assertEquals(challengeUrl, findCloudflareChallenge(wrapped)?.chapterUrl)
+        assertNull(findCloudflareChallenge(nonCf))
+
+        val defaultStatus = BackgroundDownloadStatus(
+            id = "work-1",
+            running = false,
+            finished = true,
+            succeeded = false,
+            progress = null
+        )
+        assertFalse(defaultStatus.wenkuVerificationRequired)
+        assertNull(defaultStatus.wenkuVerificationUrl)
+
+        val cfStatus = defaultStatus.copy(
+            wenkuVerificationRequired = true,
+            wenkuVerificationUrl = "https://www.wenku8.net/novel/1/2/3.htm"
+        )
+        assertTrue(cfStatus.wenkuVerificationRequired)
+        assertEquals("https://www.wenku8.net/novel/1/2/3.htm", cfStatus.wenkuVerificationUrl)
     }
 }

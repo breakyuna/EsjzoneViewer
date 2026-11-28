@@ -85,11 +85,18 @@ internal object CacheStorage {
         CacheAnalysis.observe(current)
         if (current.sizeBytes > current.maxSizeBytes) {
             CacheAnalysis.evictionPass()
-            val entries = PageCache.storageEntries() + HomeDataCache.storageEntries() +
-                HistoryDataCache.storageEntries() + images?.storageEntries().orEmpty()
+            val imageCache = images
             try {
-                reclaimCacheEntries(entries, current.sizeBytes, current.maxSizeBytes)
-            } finally { images?.flushIndex() }
+                val entries = PageCache.storageEntries() + HomeDataCache.storageEntries() +
+                    HistoryDataCache.storageEntries() + imageCache?.storageEntries().orEmpty()
+                val remaining = reclaimCacheEntries(entries, current.sizeBytes, current.maxSizeBytes)
+                if (remaining > current.maxSizeBytes && imageCache != null) {
+                    val excess = stats().sizeBytes - current.maxSizeBytes
+                    if (excess > 0L) {
+                        imageCache.reclaimUnindexedBytes(excess)
+                    }
+                }
+            } finally { imageCache?.flushIndex() }
             current = stats()
         }
         CacheAnalysis.observe(current)

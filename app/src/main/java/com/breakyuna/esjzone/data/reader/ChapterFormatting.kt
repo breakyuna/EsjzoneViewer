@@ -32,15 +32,13 @@ internal data class ParsedChapterContent(
 )
 
 /**
- * Parse the body and its layout in one pass, then verify content conservation
- * against an independent DOM traversal. If the primary parser drops visible
- * prose, furigana, or images, fall back immediately to the lossless walker.
+ * Parse the body and its layout in one pass, falling back to the lossless walker
+ * only when the primary parser throws or yields empty blocks for non-empty content.
  */
 internal fun analyseChapterContent(
     element: Element,
     primaryParser: (Element) -> ParsedChapterContent = ::parseRichChapterContent
 ): ParsedChapterContent {
-    val expected = extractDomContentSnapshot(element)
     val primary = try {
         primaryParser(element)
     } catch (error: CancellationException) {
@@ -53,23 +51,16 @@ internal fun analyseChapterContent(
         null
     }
     if (primary != null) {
-        val actual = extractBlocksContentSnapshot(primary.blocks)
-        if (isContentConserved(expected, actual)) return primary
-        AppLogger.w(
-            "ChapterIntegrity",
-            "Rich parser failed content conservation (${expected.countsComparedTo(actual)}); " +
-                "switching to lossless fallback"
-        )
+        if (primary.blocks.isNotEmpty()) return primary
+        if (!element.hasText() && element.selectFirst("img") == null) return primary
     }
 
     val fallbackBlocks = parseLosslessFallbackBlocks(element)
-    val fallback = extractBlocksContentSnapshot(fallbackBlocks)
-    if (isContentConserved(expected, fallback)) {
-        AppLogger.d("ChapterIntegrity", "Lossless fallback passed content conservation")
-    } else {
+    if (primary != null && fallbackBlocks.isEmpty()) return primary
+    if (primary != null) {
         AppLogger.w(
             "ChapterIntegrity",
-            "Lossless fallback failed content conservation (${expected.countsComparedTo(fallback)})"
+            "Rich parser returned empty blocks; switching to lossless fallback"
         )
     }
     val fallbackComponents = if (fallbackBlocks.isEmpty()) emptyList()

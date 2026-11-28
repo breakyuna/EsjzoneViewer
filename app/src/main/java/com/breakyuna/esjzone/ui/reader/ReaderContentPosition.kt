@@ -21,7 +21,7 @@ internal suspend fun restoreReaderPosition(
     } catch (_: Exception) {
         false
     }
-    return attempt(4000L, exact) || attempt(2500L, fallback)
+    return attempt(500L, exact) || attempt(250L, fallback)
 }
 
 /** Seed the first body measure from a validated anchor, or the legacy progress. */

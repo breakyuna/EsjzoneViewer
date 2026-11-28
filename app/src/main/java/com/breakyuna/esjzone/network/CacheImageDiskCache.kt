@@ -12,45 +12,43 @@ import java.nio.file.StandardCopyOption
 import okio.ByteString.Companion.encodeUtf8
 
 /** Keeps only opaque keys in the eviction index; all data mutations use Coil's public API. */
-internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache by delegate {
+internal class CacheImageDiskCache(private var delegate: DiskCache) : DiskCache {
+    override val directory = delegate.directory
+    override val fileSystem = delegate.fileSystem
+    override val maxSize = delegate.maxSize
+    override val size: Long get() = synchronized(lock) { delegate.size }
+
     private data class Entry(val bytes: Long, val accessedAt: Long)
     private val lock = Any()
     private val entries = mutableMapOf<String, Entry>()
     private val active = mutableMapOf<String, Int>()
+    private val deferredTrimIds = mutableSetOf<String>()
     private val index = File(directory.toString(), "cache-keys-v1")
     private var loaded = false
     private var indexDirty = false
     private var indexRecords = 0
     private var indexAppendFailed = false
+    private var nativeTrimDeferred = false
 
     private fun load() {
         if (loaded) return
-        // The former Coil cache has no reversible key inventory. Invalidate it once when
-        // adopting opaque delegate keys so every surviving image can be reclaimed safely.
-        if (!index.isFile) {
-            delegate.clear()
-        } else {
-            val accessedByKey = mutableMapOf<String, Long>()
-            index.forEachLine { line ->
-                val parts = line.split(' ')
-                val key = parts.firstOrNull()?.takeIf { it.matches(Regex("[a-f0-9]{64}")) }
-                val accessed = parts.getOrNull(1)?.toLongOrNull()
-                if (key != null && accessed != null) {
-                    accessedByKey[key] = accessed
+        if (index.isFile) {
+            runCatching {
+                index.forEachLine { line ->
+                    val parts = line.split(' ')
+                    val key = parts.firstOrNull()?.takeIf { KEY_PATTERN.matches(it) }
+                    val accessed = parts.getOrNull(1)?.toLongOrNull()
+                    val entryBytes = parts.getOrNull(2)?.toLongOrNull()?.takeIf { it >= 0L } ?: UNKNOWN_BYTES
+                    if (key != null && accessed != null) {
+                        entries[key] = Entry(entryBytes, accessed)
+                    }
                 }
+            }.onFailure {
+                entries.clear()
+                indexDirty = true
             }
-            accessedByKey.forEach { (key, accessed) ->
-                delegate.openSnapshot(key)?.use { snapshot ->
-                    entries[key] = Entry(bytes(snapshot), accessed)
-                }
-            }
-        }
-        if (entries.values.sumOf { it.bytes } != delegate.size) {
-            delegate.clear()
-            entries.clear()
         }
         loaded = true
-        saveIndex()
     }
 
     private fun saveIndex() {
@@ -58,7 +56,11 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
         val temporary = File(index.parentFile, "${index.name}.tmp")
         try {
             temporary.bufferedWriter().use { writer ->
-                entries.forEach { (key, entry) -> writer.appendLine("$key ${entry.accessedAt}") }
+                entries.forEach { (key, entry) ->
+                    val line = if (entry.bytes >= 0L) "$key ${entry.accessedAt} ${entry.bytes}"
+                    else "$key ${entry.accessedAt}"
+                    writer.appendLine(line)
+                }
             }
             try {
                 Files.move(temporary.toPath(), index.toPath(), StandardCopyOption.ATOMIC_MOVE,
@@ -72,13 +74,16 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
         } finally { temporary.delete() }
     }
 
-    /** Register the key before Coil commits, so a crash cannot leave an unindexed image. */
-    private fun appendIndex(id: String, accessedAt: Long) {
-        if (indexAppendFailed || indexRecords >= maxOf(64, entries.size * 2)) saveIndex()
+    /** Append a committed key record without scanning or rewriting the entire index on each write. */
+    private fun appendIndex(id: String, accessedAt: Long, entryBytes: Long) {
+        if (indexAppendFailed || indexRecords >= maxOf(64, entries.size * 2)) {
+            saveIndex()
+            return
+        }
         try {
-            index.appendText("$id $accessedAt\n")
+            index.parentFile?.mkdirs()
+            index.appendText("$id $accessedAt $entryBytes\n")
             indexRecords++
-            indexDirty = true
         } catch (error: Exception) {
             // Replace a possibly truncated tail before the next append.
             indexAppendFailed = true
@@ -90,6 +95,25 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
         (fileSystem.metadataOrNull(snapshot.data)?.size ?: 0L) +
             (fileSystem.metadataOrNull(snapshot.metadata)?.size ?: 0L)
 
+    private fun measureEntryBytesLocked(id: String): Long? = try {
+        val snapshot = delegate.openSnapshot(id)
+        if (snapshot == null) {
+            if (entries.remove(id) != null) indexDirty = true
+            null
+        } else {
+            snapshot.use { bytes(it) }
+        }
+    } catch (_: Exception) {
+        purgeCorruptEntryLocked(id, CacheEventReason.READ_FAILED)
+        null
+    }
+
+    private fun purgeCorruptEntryLocked(id: String, reason: CacheEventReason) {
+        runCatching { delegate.remove(id) }
+        if (entries.remove(id) != null) indexDirty = true
+        CacheDiagnostics.record(CacheEventType.FAILURE, CacheLayer.IMAGE, reason, fileId = id)
+    }
+
     val entryCount: Int get() = synchronized(lock) { load(); entries.size }
     val storageSizeBytes: Long get() = synchronized(lock) {
         load()
@@ -100,9 +124,24 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
     override fun openSnapshot(key: String): DiskCache.Snapshot? = synchronized(lock) {
         load()
         val id = key.encodeUtf8().sha256().hex()
-        delegate.openSnapshot(id)?.let { snapshot ->
-            entries[id] = Entry(bytes(snapshot), System.currentTimeMillis())
+        var snapshot: DiskCache.Snapshot? = null
+        try {
+            snapshot = delegate.openSnapshot(id)
+            if (snapshot == null) {
+                if (entries.remove(id) != null) indexDirty = true
+                return@synchronized null
+            }
+            val entryBytes = bytes(snapshot)
+            val existing = entries[id]
+            if (existing == null || existing.bytes != entryBytes) {
+                indexDirty = true
+            }
+            entries[id] = Entry(entryBytes, System.currentTimeMillis())
             wrapSnapshot(id, snapshot)
+        } catch (_: Exception) {
+            runCatching { snapshot?.close() }
+            purgeCorruptEntryLocked(id, CacheEventReason.READ_FAILED)
+            null
         }
     }
 
@@ -115,8 +154,14 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
     private fun retain(id: String) { active[id] = (active[id] ?: 0) + 1 }
     private fun release(id: String) {
         val count = (active[id] ?: 1) - 1
-        if (count == 0) active.remove(id) else active[id] = count
-        CacheStorage.requestTrim()
+        if (count <= 0) {
+            active.remove(id)
+            val retryNativeTrim = active.isEmpty() && nativeTrimDeferred
+            if (retryNativeTrim) nativeTrimDeferred = false
+            if (deferredTrimIds.remove(id) || retryNativeTrim) CacheStorage.requestTrim()
+        } else {
+            active[id] = count
+        }
     }
 
     private fun wrapSnapshot(id: String, snapshot: DiskCache.Snapshot): DiskCache.Snapshot {
@@ -145,12 +190,14 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
         entries[id]?.let { entries[id] = it.copy(accessedAt = System.currentTimeMillis()) }
     }
 
-    private fun committed(id: String, snapshot: DiskCache.Snapshot, accessedAt: Long) {
+    private fun committed(id: String, snapshot: DiskCache.Snapshot, accessedAt: Long): Long {
         val existed = entries.containsKey(id)
-        entries[id] = Entry(bytes(snapshot), accessedAt)
+        val entryBytes = bytes(snapshot)
+        entries[id] = Entry(entryBytes, accessedAt)
         CacheDiagnostics.record(CacheEventType.UPDATE, CacheLayer.IMAGE,
             if (existed) CacheEventReason.REPLACED else CacheEventReason.STORED,
-            fileId = id, bytes = entries.getValue(id).bytes)
+            fileId = id, bytes = entryBytes)
+        return entryBytes
     }
 
     private fun wrapEditor(id: String, editor: DiskCache.Editor): DiskCache.Editor {
@@ -166,18 +213,17 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
                 completed = true
                 try {
                     val accessedAt = System.currentTimeMillis()
-                    try {
-                        appendIndex(id, accessedAt)
-                    } catch (error: Exception) {
-                        editor.abort()
-                        throw error
-                    }
                     editor.commitAndOpenSnapshot()?.let { snapshot ->
                         try {
-                            committed(id, snapshot, accessedAt)
+                            val entryBytes = committed(id, snapshot, accessedAt)
+                            runCatching { appendIndex(id, accessedAt, entryBytes) }
+                                .onFailure {
+                                    indexAppendFailed = true
+                                    indexDirty = true
+                                }
                             wrapSnapshot(id, snapshot)
                         } catch (error: Exception) {
-                            snapshot.close()
+                            runCatching { snapshot.close() }
                             throw error
                         }
                     }
@@ -198,17 +244,37 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
 
     override fun remove(key: String): Boolean = synchronized(lock) {
         load()
-        removeId(key.encodeUtf8().sha256().hex(), CacheEventReason.INVALIDATED)
+        val id = key.encodeUtf8().sha256().hex()
+        if (entries.containsKey(id)) {
+            removeId(id, CacheEventReason.INVALIDATED)
+        } else {
+            val removed = runCatching { delegate.remove(id) }.getOrDefault(false)
+            if (removed) {
+                CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.IMAGE, CacheEventReason.INVALIDATED, fileId = id)
+            }
+            removed
+        }
     }
 
     private fun removeId(id: String, reason: CacheEventReason, persistIndex: Boolean = true): Boolean {
         val entry = entries[id] ?: return false
-        if (reason == CacheEventReason.CAPACITY && (active[id] ?: 0) > 0) return false
-        if (!delegate.remove(id)) return false
+        if (reason == CacheEventReason.CAPACITY && (active[id] ?: 0) > 0) {
+            deferredTrimIds.add(id)
+            return false
+        }
+        val removedFromDelegate = runCatching { delegate.remove(id) }.getOrDefault(false)
         entries.remove(id)
+        deferredTrimIds.remove(id)
         indexDirty = true
         if (persistIndex) flushIndex()
-        CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.IMAGE, reason, fileId = id, bytes = entry.bytes)
+        if (!removedFromDelegate) return false
+        CacheDiagnostics.record(
+            CacheEventType.EVICT,
+            CacheLayer.IMAGE,
+            reason,
+            fileId = id,
+            bytes = entry.bytes.coerceAtLeast(0L)
+        )
         return true
     }
 
@@ -217,6 +283,10 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
         try {
             entries.keys.toList().forEach { removeId(it, CacheEventReason.CLEARED, persistIndex = false) }
             delegate.clear() // Also invalidate edits that have not published their first entry yet.
+            entries.clear()
+            deferredTrimIds.clear()
+            indexRecords = 0
+            indexDirty = true
         } finally { flushIndex() }
         CacheStorage.requestTrim()
     }
@@ -231,15 +301,81 @@ internal class CacheImageDiskCache(private val delegate: DiskCache) : DiskCache 
         delegate.shutdown()
     }
 
+    /** Use Coil's LRU when the shared quota needs to reclaim committed bytes with unknown keys. */
+    fun reclaimUnindexedBytes(excessBytes: Long): Long? = synchronized(lock) {
+        load()
+        val before = delegate.size
+        val indexedBytes = entries.values.sumOf { it.bytes.coerceAtLeast(0L) }
+        val reclaimBytes = minOf(excessBytes, before - indexedBytes)
+        if (reclaimBytes <= 0L) return@synchronized 0L
+        if (active.isNotEmpty()) {
+            nativeTrimDeferred = true
+            return@synchronized null
+        }
+
+        val target = before - reclaimBytes
+        if (target == 0L) {
+            delegate.clear()
+        } else {
+            fun openCache(limit: Long) = DiskCache.Builder().directory(directory)
+                .fileSystem(fileSystem).maxSizeBytes(limit).build()
+
+            delegate.shutdown()
+            try {
+                val limited = openCache(target)
+                try {
+                    limited.size // Initialize the journal before shutdown applies the lower limit.
+                } finally {
+                    limited.shutdown()
+                }
+            } finally {
+                delegate = openCache(maxSize)
+            }
+        }
+        val reclaimed = (before - delegate.size).coerceAtLeast(0L)
+        if (reclaimed > 0L) {
+            for ((id, entry) in entries.toList()) {
+                val actualBytes = measureEntryBytesLocked(id) ?: continue
+                if (actualBytes != entry.bytes) {
+                    entries[id] = entry.copy(bytes = actualBytes)
+                    indexDirty = true
+                }
+            }
+            CacheDiagnostics.record(CacheEventType.EVICT, CacheLayer.IMAGE, CacheEventReason.CAPACITY, bytes = reclaimed)
+        }
+        reclaimed
+    }
+
     fun storageEntries(): List<CacheStorageEntry> = synchronized(lock) {
         load()
-        entries.map { (id, entry) ->
-            CacheStorageEntry(entry.bytes, entry.accessedAt) {
+        val result = ArrayList<CacheStorageEntry>(entries.size)
+        for (id in entries.keys.toList()) {
+            val current = entries[id] ?: continue
+            val entry = if (current.bytes >= 0L) {
+                current
+            } else {
+                if (id in active) {
+                    deferredTrimIds.add(id)
+                    continue
+                }
+                val resolvedBytes = measureEntryBytesLocked(id) ?: continue
+                current.copy(bytes = resolvedBytes).also {
+                    entries[id] = it
+                    indexDirty = true
+                }
+            }
+            result += CacheStorageEntry(entry.bytes, entry.accessedAt) {
                 synchronized(lock) {
                     if (entries[id] !== entry) false else removeId(id, CacheEventReason.CAPACITY, persistIndex = false)
                 }
             }
         }
+        result
+    }
+
+    private companion object {
+        private const val UNKNOWN_BYTES = -1L
+        private val KEY_PATTERN = Regex("[a-f0-9]{64}")
     }
 }
 

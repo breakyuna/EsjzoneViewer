@@ -6,8 +6,6 @@ import com.breakyuna.esjzone.ui.designsystem.appUsesWideLayout
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.fillMaxHeight
 import com.breakyuna.esjzone.app.PresentationAccess
-import com.breakyuna.esjzone.network.features.getChapterDetail
-import com.breakyuna.esjzone.network.cancellablePageRequest
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -208,15 +206,8 @@ import com.breakyuna.esjzone.ui.navigation.AppNavigator
 import com.breakyuna.esjzone.util.AppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 class NovelPage(
     private val novel: Novel,
@@ -1506,7 +1497,7 @@ private fun NovelDownloadActions(
     var downloadStatus by remember(novel.url) { mutableStateOf<BackgroundDownloadStatus?>(null) }
     var downloading by remember(novel.url) { mutableStateOf(false) }
     var preflighting by remember(novel.url) { mutableStateOf(false) }
-    var wenkuVerificationUrl by remember(novel.url) { mutableStateOf<String?>(null) }
+    var wenkuVerification by remember(novel.url) { mutableStateOf<Pair<String, Set<String>?>?>(null) }
     var pausing by remember(novel.url) { mutableStateOf(false) }
     var progress by remember(novel.url) { mutableStateOf<DownloadProgress?>(null) }
     var requestedWorkId by rememberSaveable(novel.url) { mutableStateOf<String?>(null) }
@@ -1516,8 +1507,17 @@ private fun NovelDownloadActions(
     var selectedChapterUrls by rememberSaveable(novel.url, stateSaver = DownloadChapterSelectionSaver) {
         mutableStateOf<Set<String>>(emptySet())
     }
-    var verificationSelection by remember(novel.url) { mutableStateOf<Set<String>?>(null) }
     val downloadScope = rememberCoroutineScope()
+
+    fun openWenkuVerification(status: BackgroundDownloadStatus, manifest: DownloadedNovelManifest?) {
+        val selection = status.selectedChapterUrls
+        val url = status.wenkuVerificationUrl ?: firstUnsavedWenkuChapterUrl(novel, manifest, selection)
+        if (url == null) {
+            Toast.makeText(context, R.string.novel_download_failed, Toast.LENGTH_SHORT).show()
+        } else {
+            wenkuVerification = url to selection
+        }
+    }
 
     LaunchedEffect(novel.url, requestedWorkId) {
         NovelDownloadManager.statusFlow(context, novel.url).collect { status ->
@@ -1567,6 +1567,8 @@ private fun NovelDownloadActions(
                         Toast.makeText(context, appContext.getString(
                             R.string.novel_download_saved_with_images, pendingImageCount),
                             Toast.LENGTH_LONG).show()
+                    } else if (!status.succeeded && status.wenkuVerificationRequired) {
+                        openWenkuVerification(status, updated)
                     } else {
                         Toast.makeText(
                             context,
@@ -1584,15 +1586,16 @@ private fun NovelDownloadActions(
         }
     }
 
-    fun enqueueDownload(selectedUrls: Set<String>? = null) {
-        if (downloading || preflighting || novel.chapterList.orderedChapters.isEmpty()) return
+    fun enqueueDownload(selectedUrls: Set<String>? = null, resumeVerified: Boolean = false) {
+        if (downloading || preflighting) return
         pausing = false
         val selectedKeys = selectedUrls?.map(com.breakyuna.esjzone.offline.NovelDownloadStore::chapterKey)?.toSet()
         val targetChapters = novel.chapterList.orderedChapters.filter { chapter ->
             !chapter.isExternal && (selectedKeys == null ||
                 com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url) in selectedKeys)
         }.distinctBy { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }
-        if (targetChapters.isEmpty()) return
+        // A verified worker refreshes the catalog itself and can know chapters absent from this page.
+        if (targetChapters.isEmpty() && !resumeVerified) return
         val targetKeys = targetChapters.map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
         val existingCompleted = downloaded?.chapters.orEmpty().filter { record ->
             record.isSaved && com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(record.url) in targetKeys
@@ -1603,92 +1606,42 @@ private fun NovelDownloadActions(
             chapterName = ""
         )
         downloading = true
-        preflighting = true
-        downloadScope.launch {
-            var pendingWenku: com.breakyuna.esjzone.novellibrary.novel.Chapter? = null
-            try {
-                val completedKeys = downloaded?.chapters.orEmpty().filter { it.isSaved }
-                    .map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }.toSet()
-                val wenkuChapters = targetChapters.filter {
-                    it.source == com.breakyuna.esjzone.novellibrary.novel.ChapterSource.WENKU8 &&
-                        com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) !in completedKeys
-                }
-                val prefetchSlots = Semaphore(2)
-                var prefetched = 0
-                val failures = coroutineScope {
-                    wenkuChapters.map { chapter ->
-                        async {
-                            prefetchSlots.withPermit {
-                                val failure = try {
-                                    cancellablePageRequest {
-                                        com.breakyuna.esjzone.network.EsjzoneClient.getChapterDetail(
-                                            authorization, chapter, preferDownloaded = false, forceRefresh = false
-                                        )
-                                    }
-                                    null
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    error
-                                }
-                                if (failure == null) prefetched++
-                                progress = DownloadProgress(prefetched, wenkuChapters.size, chapter.name)
-                                failure?.let { chapter to it }
-                            }
-                        }
-                    }.awaitAll().filterNotNull()
-                }
-                failures.firstOrNull()?.let { (chapter, error) ->
-                    pendingWenku = chapter
-                    throw error
-                }
-                requestedWorkId = NovelDownloadManager.enqueue(context, authorization, novel, selectedUrls).toString()
-                preflighting = false
-            } catch (error: CancellationException) {
-                preflighting = false
-                downloading = false
-                throw error
-            } catch (error: com.breakyuna.esjzone.network.external.CloudflareChallengeRequiredException) {
-                preflighting = false
-                downloading = false
-                verificationSelection = selectedUrls
-                wenkuVerificationUrl = pendingWenku?.url
-            } catch (error: com.breakyuna.esjzone.network.external.WenkuCookieStoreUnavailableException) {
-                preflighting = false
-                downloading = false
-                Toast.makeText(context, R.string.wenku_cookie_store_unavailable, Toast.LENGTH_LONG).show()
-            } catch (error: Exception) {
-                preflighting = false
-                downloading = false
-                AppLogger.e("NovelPage", "Unable to schedule background novel download", error)
-                Toast.makeText(context, R.string.novel_download_failed, Toast.LENGTH_SHORT).show()
-            }
+        try {
+            requestedWorkId = NovelDownloadManager.enqueue(appContext, authorization, novel, selectedUrls).toString()
+        } catch (error: Exception) {
+            downloading = false
+            AppLogger.e("NovelPage", "Unable to schedule background novel download", error)
+            Toast.makeText(context, R.string.novel_download_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
-    wenkuVerificationUrl?.let { url ->
+    wenkuVerification?.let { (url, selection) ->
         WenkuVerificationDialog(
             url = EsjzoneUrls.resolve(url),
             acceptChapterContent = true,
             onVerified = { html ->
-                val chapter = novel.chapterList.orderedChapters.firstOrNull { it.url == url }
-                wenkuVerificationUrl = null
+                val chapter = novel.chapterList.orderedChapters.firstOrNull {
+                    it.url == url ||
+                        com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) ==
+                        com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(url)
+                } ?: Chapter(name = "", url = url, isHistory = false)
+                wenkuVerification = null
                 downloadScope.launch {
-                    if (html != null && chapter != null) {
+                    if (html != null) {
                         withContext(Dispatchers.IO) {
                             com.breakyuna.esjzone.network.EsjzoneClient.importWenkuBrowserChapter(
                                 chapter, EsjzoneUrls.resolve(url), html
                             )
                         }
                     }
-                    enqueueDownload(verificationSelection)
+                    enqueueDownload(selection, resumeVerified = true)
                 }
             },
             onUnavailable = {
-                wenkuVerificationUrl = null
+                wenkuVerification = null
                 Toast.makeText(context, R.string.wenku_cookie_store_unavailable, Toast.LENGTH_LONG).show()
             },
-            onDismiss = { wenkuVerificationUrl = null }
+            onDismiss = { wenkuVerification = null }
         )
     }
 
@@ -1751,6 +1704,7 @@ private fun NovelDownloadActions(
                 val downloadedCount = downloaded?.savedChapterCount ?: 0
                 stringResource(
                     when {
+                        downloadStatus?.wenkuVerificationRequired == true -> R.string.wenku_verification_open
                         downloaded?.chaptersSaved == true && downloaded.pendingImageChapterCount > 0 -> R.string.novel_download_retry_images
                         downloaded?.chaptersSaved == true -> R.string.novel_download_update
                         downloadedCount > 0 -> R.string.novel_download_continue
@@ -1831,7 +1785,11 @@ private fun NovelDownloadActions(
             batchUnlocking = batchUnlocking,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             onDismiss = { showSheet = false },
-            onDownload = { enqueueDownload() },
+            onDownload = {
+                val status = downloadStatus
+                if (status?.wenkuVerificationRequired == true) openWenkuVerification(status, downloaded)
+                else enqueueDownload()
+            },
             onSelectChapters = {
                 selectedChapterUrls = emptySet()
                 showChapterSelection = true
@@ -2170,7 +2128,10 @@ private fun NovelDownloadSheet(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = stringResource(R.string.novel_download_failed),
+                                    text = stringResource(
+                                        if (status.wenkuVerificationRequired) R.string.wenku_download_verification_title
+                                        else R.string.novel_download_failed
+                                    ),
                                     color = MaterialTheme.colorScheme.error,
                                     style = AppTypography.bodyMedium
                                 )
@@ -2391,6 +2352,7 @@ private fun NovelDownloadSheet(
                     Text(
                         text = stringResource(
                             when {
+                                status?.wenkuVerificationRequired == true -> R.string.wenku_verification_open
                                 manifest?.chaptersSaved == true && pendingImages > 0 -> R.string.novel_download_retry_images
                                 manifest?.chaptersSaved == true -> R.string.novel_download_update
                                 completed > 0 -> R.string.novel_download_continue
@@ -2514,4 +2476,23 @@ private fun openSystemBrowser(context: Context, rawUrl: String) {
     }.onFailure { error ->
         AppLogger.w("NovelPage", "Unable to open URL in system browser", error)
     }
+}
+
+private fun firstUnsavedWenkuChapterUrl(
+    novel: DetailedNovel,
+    manifest: DownloadedNovelManifest?,
+    selectedUrls: Set<String>?
+): String? {
+    val selectedKeys = selectedUrls?.map(com.breakyuna.esjzone.offline.NovelDownloadStore::chapterKey)?.toSet()
+    val savedKeys = manifest?.chapters.orEmpty()
+        .filter { it.isSaved }
+        .map { com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(it.url) }
+        .toSet()
+    return novel.chapterList.orderedChapters.firstOrNull { chapter ->
+        !chapter.isExternal &&
+            chapter.source == com.breakyuna.esjzone.novellibrary.novel.ChapterSource.WENKU8 &&
+            (selectedKeys == null ||
+                com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url) in selectedKeys) &&
+            com.breakyuna.esjzone.offline.NovelDownloadStore.chapterKey(chapter.url) !in savedKeys
+    }?.url
 }

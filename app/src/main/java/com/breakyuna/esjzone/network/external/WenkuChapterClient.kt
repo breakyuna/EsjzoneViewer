@@ -19,9 +19,8 @@ import com.breakyuna.esjzone.novellibrary.novel.Chapter
 import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import com.breakyuna.esjzone.novellibrary.novel.resolveChapterSource
-import java.net.InetAddress
 import java.util.concurrent.TimeUnit
-import okhttp3.Dns
+import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -31,19 +30,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     private val cacheDirectory = context.applicationContext.cacheDir
     private val jar = WenkuCookieJar(context)
     private val browser = WenkuWebViewSession(context, userAgent)
-    private val client = OkHttpClient.Builder()
-        .cookieJar(jar)
-        .dns(Dns { host ->
-            if (host != "www.wenku8.net") throw java.net.UnknownHostException("External host is not allowed")
-            val addresses = Dns.SYSTEM.lookup(host)
-            addresses.filter(::isPublicAddress).takeIf { it.isNotEmpty() }
-                ?: throw java.net.UnknownHostException("External host has no public address")
-        })
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .callTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(false)
-        .build()
+    private val client = createHttpClient(jar)
     private val userAgentHeader = userAgent
 
     fun importBrowserCookies(raw: String?) = jar.importBrowserCookies(raw)
@@ -62,17 +49,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
     fun closeBrowserSession() = browser.close()
 
     private val readerImageClient: OkHttpClient by lazy {
-        client.newBuilder()
-            .addInterceptor(com.breakyuna.esjzone.network.ImageTransferInterceptor { cacheDirectory.usableSpace })
-            .addInterceptor { chain ->
-                chain.proceed(chain.request().newBuilder()
-                    .header("User-Agent", userAgentHeader)
-                    .header("Referer", "https://www.wenku8.net/")
-                    .build())
-            }
-            .readTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(2, TimeUnit.MINUTES)
-            .build()
+        createImageClient(client, userAgentHeader) { cacheDirectory.usableSpace }
     }
 
     fun imageClient(): OkHttpClient = readerImageClient
@@ -107,7 +84,7 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
         }
         val result = request(url)
         if (result.challenge) {
-            if (!allowAutoSolve) throw CloudflareChallengeRequiredException()
+            if (!allowAutoSolve) throw CloudflareChallengeRequiredException(url)
             onSecurityCheck?.invoke()
             val html = browser.fetch(url)
             val detail = validateAndParse(html, chapter, url)
@@ -178,11 +155,31 @@ internal class WenkuChapterClient(context: Context, userAgent: String) {
 
     private data class ResponseData(val status: Int, val html: String, val challenge: Boolean)
 
-    private fun isPublicAddress(address: InetAddress): Boolean {
-        if (address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress ||
-            address.isSiteLocalAddress || address.isMulticastAddress) return false
-        val bytes = address.address
-        if (bytes.size == 16 && (bytes[0].toInt() and 0xfe) == 0xfc) return false
-        return true
+    internal companion object {
+        fun createHttpClient(cookieJar: CookieJar): OkHttpClient = OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .build()
+
+        fun createImageClient(
+            baseClient: OkHttpClient,
+            userAgent: String,
+            availableBytes: () -> Long
+        ): OkHttpClient = baseClient.newBuilder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                if (!isAllowedWenkuImageUrl(request.url)) throw UnsupportedExternalChapterException()
+                chain.proceed(request.newBuilder()
+                    .header("User-Agent", userAgent)
+                    .header("Referer", "https://www.wenku8.net/")
+                    .build())
+            }
+            .addInterceptor(com.breakyuna.esjzone.network.ImageTransferInterceptor(availableBytes))
+            .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(2, TimeUnit.MINUTES)
+            .build()
     }
 }

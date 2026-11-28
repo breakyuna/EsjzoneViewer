@@ -10,6 +10,8 @@ import com.breakyuna.esjzone.network.CacheStorage
 import com.breakyuna.esjzone.network.CacheAnalysis
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.breakyuna.esjzone.BuildConfig
+import com.breakyuna.esjzone.data.settings.SettingsDefaults
 import com.breakyuna.esjzone.data.settings.SettingsDataStore
 import com.breakyuna.esjzone.data.settings.ReaderSettingsDataStore
 import com.breakyuna.esjzone.data.repository.DatabaseBookmarkRepository
@@ -100,9 +102,13 @@ class AppContainer(
                 .build()
         }
         .diskCache {
+            val maxDiskCacheBytes = (
+                if (BuildConfig.DEBUG) SettingsDefaults.MAX_PAGE_CACHE_MIB
+                else SettingsDefaults.DEFAULT_PAGE_CACHE_MIB
+            ).toLong() * 1024L * 1024L
             CacheImageDiskCache(DiskCache.Builder()
                 .directory(appContext.cacheDir.resolve("image_cache").toOkioPath())
-                .maxSizeBytes(Long.MAX_VALUE)
+                .maxSizeBytes(maxDiskCacheBytes)
                 .build())
         }
         .eventListener(CacheImageEventListener())

@@ -30,8 +30,10 @@ import com.breakyuna.esjzone.domain.reader.ReaderBlock
 import com.breakyuna.esjzone.domain.reader.ReaderChapterDocument
 import com.breakyuna.esjzone.domain.reader.ReaderChapterRef
 import com.breakyuna.esjzone.domain.reader.ReaderTextStyle
+import com.breakyuna.esjzone.network.external.isAllowedWenkuImageUrl
 import com.breakyuna.esjzone.novellibrary.component.Component
 import com.breakyuna.esjzone.novellibrary.novel.Chapter
+import com.breakyuna.esjzone.novellibrary.novel.ChapterSource
 import com.breakyuna.esjzone.novellibrary.novel.DetailedChapter
 import kotlin.math.ceil
 
@@ -41,7 +43,18 @@ import kotlin.math.ceil
  * stable domain AST below this seam.
  */
 fun DetailedChapter.toReaderDocument(chapter: Chapter): ReaderChapterDocument {
-    val blocks = body?.readerBlocks { imageLocations[it] ?: it } ?: content.flatMap(Component::toReaderBlocks)
+    val isWenku = chapter.source == ChapterSource.WENKU8
+    fun imageUrl(original: String): String {
+        val resolved = imageLocations[original] ?: original
+        val downloaded = resolved != original && (resolved.startsWith("file:") || resolved.startsWith("content:"))
+        // Keep the block index for anchors in older snapshots while suppressing disallowed requests.
+        return if (!isWenku || downloaded || isAllowedWenkuImageUrl(resolved)) resolved else ""
+    }
+    val blocks = body?.readerBlocks(::imageUrl) ?: content.flatMap(Component::toReaderBlocks).let { legacy ->
+        if (!isWenku) legacy else legacy.map { block ->
+            if (block is ReaderBlock.Image) block.copy(url = imageUrl(block.url)) else block
+        }
+    }
     return ReaderChapterDocument(
         chapter = ReaderChapterRef(chapter.name, chapter.url),
         blocks = blocks,

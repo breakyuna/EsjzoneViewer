@@ -50,6 +50,8 @@ import com.breakyuna.esjzone.ui.designsystem.GlobalText as Text
 import com.breakyuna.esjzone.ui.designsystem.globalStringResource as stringResource
 import com.breakyuna.esjzone.ui.reader.ReaderScript
 import com.breakyuna.esjzone.util.LocaleHelper
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.json.JSONObject
 import org.jsoup.Jsoup
 
@@ -105,12 +107,17 @@ class InAppBrowserActivity : ComponentActivity() {
                             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                             addJavascriptInterface(object {
                                 @JavascriptInterface
-                                fun convert(text: String, mode: String): String {
-                                    if (text.length > 32_768) return text
+                                fun convertBatch(payload: String?, mode: String?): String {
+                                    if (payload.isNullOrEmpty() || payload.length > MAX_BRIDGE_PAYLOAD_CHARS) return ""
                                     val script = ReaderScript.entries.firstOrNull { it.name == mode }
                                         ?: ReaderScript.ORIGINAL
-                                    if (script != currentScriptMode) return text
-                                    return websiteConverter.convert(text, script)
+                                    if (script == ReaderScript.ORIGINAL || script != currentScriptMode) return ""
+                                    val items = runCatching { Json.decodeFromString<List<String>>(payload) }
+                                        .getOrNull() ?: return ""
+                                    if (items.isEmpty()) return ""
+                                    val converted = websiteConverter.convertBatch(items, script)
+                                    if (converted.size != items.size) return ""
+                                    return Json.encodeToString(converted)
                                 }
                             }, "EsjScriptBridge")
                             webViewClient = object : WebViewClient() {
@@ -122,6 +129,7 @@ class InAppBrowserActivity : ComponentActivity() {
                                 }
 
                                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                                    websiteConverter.resetPage()
                                     currentUrl = url
                                     canGoBack = view.canGoBack()
                                 }
@@ -195,41 +203,107 @@ class InAppBrowserActivity : ComponentActivity() {
             (function(mode) {
                 if (!document.body) return;
                 var state = window.__esjScriptState;
+                if (!state && mode === 'ORIGINAL') return;
+                var MAX_TEXT_LENGTH = 32768;
+                var MAX_BATCH_NODES = 128;
+                var MAX_BATCH_CHARS = 65536;
                 if (!state) {
                     state = { mode: mode, records: new WeakMap() };
-                    state.applyNode = function(node) {
+                    state.flush = function(batch) {
+                        if (!batch.length) return;
+                        var texts = batch.map(function(item) { return item.record.original; });
+                        var raw = window.EsjScriptBridge.convertBatch(JSON.stringify(texts), state.mode);
+                        if (!raw) return;
+                        var results;
+                        try {
+                            results = JSON.parse(raw);
+                        } catch (_) {
+                            return;
+                        }
+                        if (!Array.isArray(results) || results.length !== batch.length) return;
+                        for (var i = 0; i < batch.length; i++) {
+                            var next = results[i];
+                            if (typeof next !== 'string') continue;
+                            var item = batch[i];
+                            item.record.rendered = next;
+                            item.record.mode = state.mode;
+                            state.records.set(item.node, item.record);
+                            if (item.node.nodeValue === item.expected && item.expected !== next) {
+                                item.node.nodeValue = next;
+                            }
+                        }
+                    };
+                    state.collectNode = function(node, queue, seen) {
+                        if (!node || node.nodeType !== Node.TEXT_NODE || seen.has(node)) return;
+                        seen.add(node);
                         var parent = node.parentElement;
                         if (!parent || /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|CODE|PRE)$/.test(parent.tagName) ||
                             parent.closest('[contenteditable="true"]')) return;
                         var current = node.nodeValue || '';
+                        if (!/\S/.test(current)) return;
                         var record = state.records.get(node);
-                        if (!record || current !== record.rendered) record = { original: current, rendered: current };
-                        var next = state.mode === 'ORIGINAL' ? record.original :
-                            window.EsjScriptBridge.convert(record.original, state.mode);
-                        record.rendered = next;
-                        state.records.set(node, record);
-                        if (current !== next) node.nodeValue = next;
+                        if (record && current === record.rendered && record.mode === state.mode) return;
+                        if (!record || current !== record.rendered) {
+                            record = { original: current, rendered: current, mode: 'ORIGINAL' };
+                        }
+                        if (state.mode === 'ORIGINAL') {
+                            record.rendered = record.original;
+                            record.mode = 'ORIGINAL';
+                            state.records.set(node, record);
+                            if (current !== record.original) node.nodeValue = record.original;
+                            return;
+                        }
+                        if (record.original.length > MAX_TEXT_LENGTH) return;
+                        queue.push({ node: node, record: record, expected: current });
                     };
-                    state.scan = function(root) {
+                    state.collectTree = function(root, queue, seen) {
                         if (!root) return;
                         if (root.nodeType === Node.TEXT_NODE) {
-                            state.applyNode(root);
+                            state.collectNode(root, queue, seen);
                         } else if (root.nodeType === Node.ELEMENT_NODE) {
                             var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
                             var node;
-                            while ((node = walker.nextNode())) state.applyNode(node);
+                            while ((node = walker.nextNode())) state.collectNode(node, queue, seen);
                         }
                     };
+                    state.applyQueue = function(queue) {
+                        if (!queue.length) return;
+                        var batch = [];
+                        var batchChars = 0;
+                        for (var i = 0; i < queue.length; i++) {
+                            var item = queue[i];
+                            var len = item.record.original.length;
+                            if (batch.length >= MAX_BATCH_NODES ||
+                                (batch.length > 0 && batchChars + len > MAX_BATCH_CHARS)) {
+                                state.flush(batch);
+                                batch = [];
+                                batchChars = 0;
+                            }
+                            batch.push(item);
+                            batchChars += len;
+                        }
+                        state.flush(batch);
+                    };
                     new MutationObserver(function(changes) {
+                        var queue = [];
+                        var seen = new Set();
                         changes.forEach(function(change) {
-                            if (change.type === 'characterData') state.applyNode(change.target);
-                            else change.addedNodes.forEach(state.scan);
+                            if (change.type === 'characterData') {
+                                state.collectNode(change.target, queue, seen);
+                            } else {
+                                change.addedNodes.forEach(function(added) {
+                                    state.collectTree(added, queue, seen);
+                                });
+                            }
                         });
+                        state.applyQueue(queue);
                     }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
                     window.__esjScriptState = state;
                 }
                 state.mode = mode;
-                state.scan(document.body);
+                var queue = [];
+                state.collectTree(document.body, queue, new Set());
+                state.applyQueue(queue);
             })(${JSONObject.quote(mode.name)});
         """.trimIndent(), null)
     }
@@ -243,6 +317,7 @@ class InAppBrowserActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_URL = "browser_url"
         private const val EXTRA_KEEP_IN_APP = "keep_in_app"
+        private const val MAX_BRIDGE_PAYLOAD_CHARS = 512 * 1024
 
         fun open(context: Context, url: String, keepInApp: Boolean = false) {
             val target = if (keepInApp) EsjzoneUrls.normalizeHttpUrl(url) ?: return else url.trim()

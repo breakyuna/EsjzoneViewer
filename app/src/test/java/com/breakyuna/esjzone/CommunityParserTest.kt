@@ -2,12 +2,23 @@ package com.breakyuna.esjzone
 
 import com.breakyuna.esjzone.network.Authorization
 import com.breakyuna.esjzone.network.EsjzoneClient
+import com.breakyuna.esjzone.network.EsjzoneUrls
+import com.breakyuna.esjzone.network.NetworkHttpException
 import com.breakyuna.esjzone.network.PageCache
 import com.breakyuna.esjzone.network.PageCacheTtl
+import com.breakyuna.esjzone.network.features.CommentSubmissionNotVerifiedException
+import com.breakyuna.esjzone.network.features.CommentSubmissionTimeoutException
 import com.breakyuna.esjzone.network.features.ForumBoardDataException
+import com.breakyuna.esjzone.network.features.ForumBoardResult
+import com.breakyuna.esjzone.network.features.ForumReplyBusinessException
+import com.breakyuna.esjzone.network.features.ForumReplyProtocolException
+import com.breakyuna.esjzone.network.features.commentPostFailure
 import com.breakyuna.esjzone.network.features.findCreatedComment
 import com.breakyuna.esjzone.network.features.findForumNovelDetailUrl
 import com.breakyuna.esjzone.network.features.getCachedCommentPageSnapshot
+import com.breakyuna.esjzone.network.features.getCachedForumPost
+import com.breakyuna.esjzone.network.features.getForumBoard
+import com.breakyuna.esjzone.network.features.loadForumBoardTopicsPayload
 import com.breakyuna.esjzone.network.features.localCommentSubmission
 import com.breakyuna.esjzone.network.features.parseComments
 import com.breakyuna.esjzone.network.features.parseCommentPageSnapshot
@@ -22,8 +33,12 @@ import com.breakyuna.esjzone.network.features.validateForumTableResponse
 import com.breakyuna.esjzone.novellibrary.community.FORUM_GROUP_ESJ
 import com.breakyuna.esjzone.novellibrary.community.FORUM_GROUP_TIANKONG
 import com.breakyuna.esjzone.novellibrary.community.ForumCategory
+import com.breakyuna.esjzone.novellibrary.community.ForumThread
 import com.breakyuna.esjzone.novellibrary.community.ForumTopic
 import com.breakyuna.esjzone.novellibrary.community.groupForumCategories
+import com.breakyuna.esjzone.ui.page.CommentSubmitError
+import com.breakyuna.esjzone.ui.page.allowsImmediateRetry
+import java.io.IOException
 import java.nio.file.Files
 import org.jsoup.Jsoup
 import org.junit.Assert.assertEquals
@@ -573,5 +588,229 @@ class CommunityParserTest {
             PageCache.clear()
             assertNull(EsjzoneClient.getCachedCommentPageSnapshot(auth, url))
         } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun getCachedForumPost_readsStaleTrustedCacheWithoutNetworkAndRejectsUntrustedHtml() {
+        val directory = Files.createTempDirectory("forum-post-cache-").toFile()
+        PageCache.initializeDirectory(directory)
+        val auth = Authorization()
+        val topic = ForumTopic(
+            boardId = "1585405223",
+            id = "335631",
+            title = "Fallback title",
+            author = null,
+            createdAt = null,
+            replyCount = null,
+            viewCount = null,
+            lastReplyAt = null,
+            url = "/forum/1585405223/335631.html#reply-1"
+        )
+        val targetUrl = EsjzoneUrls.resolve(topic.url).substringBefore('#')
+        val key = EsjzoneClient.pageCacheKey(auth, targetUrl)
+        try {
+            assertNull(EsjzoneClient.getCachedForumPost(auth, topic))
+
+            val postHtml = """
+                <html><head><title>Esjzone</title></head><body>
+                  <a href="/forum/1585405223/">Board</a>
+                  <div class="single-post-meta"><a href="/my/profile?uid=7">Alice</a> 2026-08-30 12:34</div>
+                  <h2>Cached title</h2>
+                  <div class="forum-content"><p>Cached body</p></div>
+                  <section class="comments-section"></section>
+                </body></html>
+            """.trimIndent()
+            assertTrue(
+                PageCache.write(
+                    key,
+                    postHtml,
+                    System.currentTimeMillis() - PageCacheTtl.COMMUNITY - 1_000L
+                )
+            )
+            val cached = requireNotNull(EsjzoneClient.getCachedForumPost(auth, topic))
+            assertEquals("Cached title", cached.title)
+            assertEquals("Alice", cached.author)
+            assertEquals("Cached body", cached.contentText)
+
+            assertTrue(PageCache.write(key, "<html><title>Just a moment</title></html>"))
+            assertNull(EsjzoneClient.getCachedForumPost(auth, topic))
+
+            PageCache.clear()
+            assertNull(EsjzoneClient.getCachedForumPost(auth, topic))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun forumBoardCaching_reusesFreshCacheAndFallsBackToStaleOnError() {
+        val directory = Files.createTempDirectory("forum-board-cache-").toFile()
+        PageCache.initializeDirectory(directory)
+        val auth = Authorization()
+        val thread = ForumThread(
+            categoryId = "1584622613",
+            id = "1585405336",
+            title = "討論版",
+            topicCount = 1,
+            replyCount = 2,
+            lastPostDate = null,
+            url = "/forum/1584622613/1585405336/"
+        )
+        val targetUrl = EsjzoneUrls.resolve(thread.url)
+        val endpoint = EsjzoneUrls.resolve("/inc/forum_list_data.php?totalRows=1") +
+            "&limit=20&offset=0&sort=last_reply&order=desc"
+        val jsonKey = "forum-board-json|${EsjzoneClient.pageCacheKey(auth, targetUrl)}|${EsjzoneUrls.canonicalCacheUrl(endpoint)}"
+        val freshJson = """
+            {"total":1,"rows":[
+              {"subject":"<a href=\"/forum/1585405336/150985.html\">Fresh Topic</a>",
+               "cdate":"Alice<div class=\"forum-desc\">2026-08-21</div>",
+               "vtimes":"3<div class=\"forum-desc\">15</div>",
+               "last_reply":"2026-08-26 03:52"}
+            ]}
+        """.trimIndent()
+        val staleJson = """
+            {"total":1,"rows":[
+              {"subject":"<a href=\"/forum/1585405336/150984.html\">Stale Topic</a>",
+               "cdate":"Bob<div class=\"forum-desc\">2026-08-20</div>",
+               "vtimes":"1<div class=\"forum-desc\">5</div>",
+               "last_reply":"2026-08-25 01:00"}
+            ]}
+        """.trimIndent()
+        try {
+            val boardHtml = """
+                <html><head><title>Esjzone</title></head><body>
+                  <a href="/forum/1584622613/1585405336/">討論版</a>
+                  <table id="dataTable" data-url="/inc/forum_list_data.php?totalRows=1">
+                    <tbody><tr class="no-records-found"><td colspan="4">none</td></tr></tbody>
+                  </table>
+                </body></html>
+            """.trimIndent()
+            assertTrue(PageCache.write(EsjzoneClient.pageCacheKey(auth, targetUrl), boardHtml))
+            assertTrue(PageCache.write(jsonKey, freshJson))
+
+            val cachedBoard = EsjzoneClient.getForumBoard(auth, thread, forceRefresh = false)
+            assertTrue(cachedBoard is ForumBoardResult.Topics)
+            val topics = (cachedBoard as ForumBoardResult.Topics).items
+            assertEquals(listOf("Fresh Topic"), topics.map { it.title })
+
+            // Stale JSON fallback when fetch fails and allowStaleOnError = true
+            assertTrue(
+                PageCache.write(
+                    jsonKey,
+                    staleJson,
+                    System.currentTimeMillis() - PageCacheTtl.COMMUNITY - 1_000L
+                )
+            )
+            val stalePayload = EsjzoneClient.loadForumBoardTopicsPayload(
+                authorization = auth,
+                targetUrl = targetUrl,
+                endpoint = endpoint,
+                fallbackBoardId = thread.id,
+                declaredTotal = 1,
+                forceRefresh = false,
+                allowStaleOnError = true,
+                fetchFreshBody = { throw IOException("offline") }
+            )
+            assertEquals(listOf("Stale Topic"), stalePayload.items.map { it.title })
+
+            // allowStaleOnError = false propagates the error instead of serving stale cache
+            assertThrows(IOException::class.java) {
+                EsjzoneClient.loadForumBoardTopicsPayload(
+                    authorization = auth,
+                    targetUrl = targetUrl,
+                    endpoint = endpoint,
+                    fallbackBoardId = thread.id,
+                    declaredTotal = 1,
+                    forceRefresh = true,
+                    allowStaleOnError = false,
+                    fetchFreshBody = { throw IOException("offline") }
+                )
+            }
+
+            fun refresh(fetch: () -> String) = EsjzoneClient.loadForumBoardTopicsPayload(
+                auth, targetUrl, endpoint, thread.id, declaredTotal = 1, forceRefresh = true,
+                allowStaleOnError = false, fetchFreshBody = fetch
+            )
+            refresh {
+                refresh { freshJson }
+                staleJson
+            }
+            assertEquals(freshJson, PageCache.read(jsonKey, PageCacheTtl.COMMUNITY))
+
+            refresh {
+                PageCache.clear()
+                freshJson
+            }
+            assertNull(PageCache.readStale(jsonKey))
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun commentPostFailuresOnlyAllowImmediateRetryForExplicitRejections() {
+        val url = "https://www.esjzone.cc/forum/1/2.html"
+        val invalidStatus = assertThrows(ForumReplyProtocolException::class.java) {
+            parseForumReplyResponse("""{"status":"invalid"}""")
+        }
+        for (error in listOf(invalidStatus, NetworkHttpException(url, 502))) {
+            val unverified = commentPostFailure(error, emptyList(), setOf("previous"))
+            assertTrue(unverified is CommentSubmissionNotVerifiedException)
+            assertEquals(setOf("previous"), (unverified as CommentSubmissionNotVerifiedException).previousIds)
+        }
+        assertTrue(commentPostFailure(IOException(), emptyList(), emptySet()) is CommentSubmissionTimeoutException)
+        val rejected = NetworkHttpException(url, 403)
+        assertEquals(rejected, commentPostFailure(rejected, emptyList(), emptySet()))
+        val business = ForumReplyBusinessException("Rejected")
+        assertEquals(business, commentPostFailure(business, emptyList(), emptySet()))
+    }
+
+    @Test
+    fun parseForumTopics_singleCellParseHandlesBlankAuthorAndDescInLastReply() {
+        val topics = parseForumTopics(
+            """
+            {"total":2,"rows":[
+              {"subject":"<a href=\"/forum/1589699634/150985.html\">Topic One</a>",
+               "cdate":"<div class=\"forum-desc\">2026-01-02</div>",
+               "vtimes":"<div class=\"forum-desc\">42</div>",
+               "last_reply":"2026-01-03<div class=\"forum-desc\">ignored</div>"},
+              {"subject":"<a href=\"/forum/1589699634/150986.html\">Topic Two</a>"}
+            ]}
+            """.trimIndent(),
+            "1589699634"
+        )
+
+        assertEquals(2, topics.size)
+        assertEquals("", topics[0].author)
+        assertEquals("2026-01-02", topics[0].createdAt)
+        assertNull(topics[0].replyCount)
+        assertEquals(42, topics[0].viewCount)
+        assertEquals("2026-01-03", topics[0].lastReplyAt)
+
+        assertNull(topics[1].author)
+        assertNull(topics[1].createdAt)
+        assertNull(topics[1].replyCount)
+        assertNull(topics[1].viewCount)
+        assertNull(topics[1].lastReplyAt)
+    }
+
+    @Test
+    fun commentSubmitError_locksRetryOnlyForUncertainSubmissionStates() {
+        val noError: CommentSubmitError? = null
+        assertTrue(noError.allowsImmediateRetry(canRetryAfterRefresh = false))
+        assertFalse(CommentSubmitError.EMPTY.requiresRefreshBeforeRetry)
+        assertTrue(CommentSubmitError.EMPTY.allowsImmediateRetry(canRetryAfterRefresh = false))
+        assertFalse(CommentSubmitError.FAILED.requiresRefreshBeforeRetry)
+        assertTrue(CommentSubmitError.FAILED.allowsImmediateRetry(canRetryAfterRefresh = false))
+        assertFalse(CommentSubmitError.Server("每日留言次數已超過限制！").requiresRefreshBeforeRetry)
+        assertTrue(CommentSubmitError.Server("每日留言次數已超過限制！").allowsImmediateRetry(canRetryAfterRefresh = false))
+
+        assertTrue(CommentSubmitError.TIMEOUT.requiresRefreshBeforeRetry)
+        assertFalse(CommentSubmitError.TIMEOUT.allowsImmediateRetry(canRetryAfterRefresh = false))
+        assertTrue(CommentSubmitError.TIMEOUT.allowsImmediateRetry(canRetryAfterRefresh = true))
+
+        assertTrue(CommentSubmitError.NOT_VERIFIED.requiresRefreshBeforeRetry)
+        assertFalse(CommentSubmitError.NOT_VERIFIED.allowsImmediateRetry(canRetryAfterRefresh = false))
+        assertTrue(CommentSubmitError.NOT_VERIFIED.allowsImmediateRetry(canRetryAfterRefresh = true))
     }
 }
